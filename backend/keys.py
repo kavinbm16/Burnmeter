@@ -75,19 +75,26 @@ class KeyStore:
     def _fernet(self) -> Fernet:
         self.fallback_dir.mkdir(parents=True, exist_ok=True)
         secret: str | None = None
-        try:
-            secret = keyring.get_password(SERVICE, "__fernet__")
-        except Exception:
-            secret = None
+        use_keyring = self._keyring_available()
+        if use_keyring:
+            try:
+                secret = keyring.get_password(SERVICE, "__fernet__")
+            except Exception:
+                secret = None
         if secret is None:
             secret_file = self.fallback_dir / "fernet.key"
             if secret_file.exists():
                 secret = secret_file.read_text().strip()
             else:
                 secret = Fernet.generate_key().decode()
-                try:
-                    keyring.set_password(SERVICE, "__fernet__", secret)
-                except Exception:
+                stored = False
+                if use_keyring:
+                    try:
+                        keyring.set_password(SERVICE, "__fernet__", secret)
+                        stored = True
+                    except Exception:
+                        stored = False
+                if not stored:
                     secret_file.touch(mode=0o600)
                     secret_file.write_text(secret)
                     secret_file.chmod(0o600)

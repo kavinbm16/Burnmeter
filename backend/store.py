@@ -6,8 +6,9 @@ API keys are NEVER stored here — see keys.py.
 from __future__ import annotations
 
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, AsyncIterator
 
 import aiosqlite
 
@@ -68,15 +69,16 @@ class Store:
             await db.executescript(SCHEMA)
             await db.commit()
 
-    async def _conn(self) -> aiosqlite.Connection:
-        db = await aiosqlite.connect(self.db_path)
-        db.row_factory = aiosqlite.Row
-        return db
+    @asynccontextmanager
+    async def _conn(self) -> AsyncIterator[aiosqlite.Connection]:
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            yield db
 
     # -- providers -----------------------------------------------------------
 
     async def add_provider(self, name: str, display_name: str, masked_key: str, label: str) -> None:
-        async with await self._conn() as db:
+        async with self._conn() as db:
             await db.execute(
                 "INSERT INTO providers(name, display_name, masked_key, label) VALUES(?,?,?,?) "
                 "ON CONFLICT(name) DO UPDATE SET masked_key=excluded.masked_key, label=excluded.label",
@@ -85,7 +87,7 @@ class Store:
             await db.commit()
 
     async def remove_provider(self, name: str) -> None:
-        async with await self._conn() as db:
+        async with self._conn() as db:
             await db.execute("DELETE FROM providers WHERE name=?", (name,))
             await db.execute("DELETE FROM usage_records WHERE provider=?", (name,))
             await db.execute("DELETE FROM cost_records WHERE provider=?", (name,))
@@ -93,7 +95,7 @@ class Store:
             await db.commit()
 
     async def list_providers(self) -> list[dict[str, Any]]:
-        async with await self._conn() as db:
+        async with self._conn() as db:
             cur = await db.execute(
                 """SELECT p.*, s.last_synced_at, s.watermark_date,
                           s.status AS sync_status, s.error AS sync_error
@@ -107,7 +109,7 @@ class Store:
     async def upsert_usage(self, records: list[UsageRecord]) -> None:
         if not records:
             return
-        async with await self._conn() as db:
+        async with self._conn() as db:
             await db.executemany(
                 """INSERT INTO usage_records
                    (provider, model, date, source, input_tokens, output_tokens,
@@ -135,7 +137,7 @@ class Store:
 
     async def increment_usage(self, r: UsageRecord) -> None:
         """Additive upsert for proxy capture (one call at a time)."""
-        async with await self._conn() as db:
+        async with self._conn() as db:
             await db.execute(
                 """INSERT INTO usage_records
                    (provider, model, date, source, input_tokens, output_tokens,
@@ -161,7 +163,7 @@ class Store:
     async def upsert_costs(self, records: list[CostRecord]) -> None:
         if not records:
             return
-        async with await self._conn() as db:
+        async with self._conn() as db:
             await db.executemany(
                 """INSERT INTO cost_records (provider, date, source, line_item, cost_usd)
                    VALUES (?,?,?,?,?)
@@ -176,7 +178,7 @@ class Store:
     async def set_sync_state(
         self, provider: str, status: str, error: str | None = None, watermark: str | None = None
     ) -> None:
-        async with await self._conn() as db:
+        async with self._conn() as db:
             await db.execute(
                 """INSERT INTO sync_state(provider, last_synced_at, watermark_date, status, error)
                    VALUES (?, datetime('now'), ?, ?, ?)
@@ -191,7 +193,7 @@ class Store:
     # -- aggregates ------------------------------------------------------------
 
     async def overview(self, start: str, end: str) -> dict[str, Any]:
-        async with await self._conn() as db:
+        async with self._conn() as db:
             cur = await db.execute(
                 """SELECT provider,
                           SUM(input_tokens) AS input_tokens,
@@ -225,7 +227,7 @@ class Store:
         return {"totals": totals, "by_provider": by_provider, "daily": daily}
 
     async def breakdown(self, provider: str, start: str, end: str) -> dict[str, Any]:
-        async with await self._conn() as db:
+        async with self._conn() as db:
             cur = await db.execute(
                 """SELECT model, source,
                           SUM(input_tokens) AS input_tokens,
