@@ -7,8 +7,31 @@
   let busy = $state<string | null>(null)
   let errors = $state<Record<string, string>>({})
   let copied = $state(false)
+  let billing = $state<{ configured: boolean; table: string | null } | null>(null)
+  let billingCreds = $state('')
+  let billingTable = $state('')
+  let billingError = $state('')
 
   const proxyUrl = `${location.protocol}//${location.hostname}:8400/proxy/gemini`
+  const liveProxyUrl = `ws://${location.hostname}:8400/proxy/gemini`
+
+  api.billingStatus().then((b) => (billing = b))
+
+  async function saveBilling() {
+    billingError = ''
+    try {
+      await api.billingConfigure(billingCreds, billingTable)
+      billingCreds = ''
+      billing = await api.billingStatus()
+    } catch (e: any) {
+      billingError = e.message
+    }
+  }
+
+  async function removeBilling() {
+    await api.billingRemove()
+    billing = await api.billingStatus()
+  }
 
   async function load() {
     data = await api.providers()
@@ -115,6 +138,60 @@
               <p class="microlabel-dim mt-2">
                 only traffic routed through the proxy is counted · costs are ≈ estimates
               </p>
+
+              <div class="mt-4 border-t border-hairline pt-3">
+                <span class="microlabel">Live API (websocket) sessions</span>
+                <code class="numeral mt-2 block truncate text-xs">{liveProxyUrl}</code>
+                <pre class="mt-2 overflow-x-auto text-xs" style="color: var(--muted)">{`client = genai.Client(
+    api_key=...,
+    http_options={"base_url": "${liveProxyUrl}"},
+)
+# live sessions (BidiGenerateContent) relay through the same host;
+# audio + text tokens are split and priced at Live rates, per key`}</pre>
+              </div>
+            </div>
+
+            <div class="mt-px border border-hairline bg-ink-2 p-4">
+              <div class="flex items-baseline justify-between">
+                <span class="microlabel">Ground-truth cost · GCP billing export</span>
+                {#if billing?.configured}
+                  <button class="microlabel-dim hover:text-paper" onclick={removeBilling}>REMOVE</button>
+                {/if}
+              </div>
+              {#if billing?.configured}
+                <p class="mt-2 text-sm" style="color: var(--muted)">
+                  Connected to <code class="numeral text-xs">{billing.table}</code>. Daily SKU-level
+                  costs (audio in / text out / live) sync hourly into the Gemini drilldown.
+                </p>
+              {:else}
+                <p class="mt-2 text-sm" style="color: var(--muted)">
+                  Advanced: enable Cloud Billing export to BigQuery, create a read-only service
+                  account, paste its JSON + the export table. Gives billed (not estimated) Gemini
+                  cost split by SKU. Note: Google's export has no per-key dimension — key-wise
+                  numbers come from the proxy.
+                </p>
+                <input
+                  placeholder="project.dataset.gcp_billing_export_v1_XXXXXX"
+                  bind:value={billingTable}
+                  class="numeral mt-3 w-full border border-hairline bg-ink px-3 py-2 text-xs text-paper
+                         placeholder:text-muted/60 focus:border-red focus:outline-none"
+                />
+                <textarea
+                  placeholder="service-account credentials JSON (stored encrypted, never in the DB)"
+                  bind:value={billingCreds}
+                  rows="3"
+                  class="numeral mt-2 w-full resize-y border border-hairline bg-ink px-3 py-2 text-xs
+                         text-paper placeholder:text-muted/60 focus:border-red focus:outline-none"
+                ></textarea>
+                <button
+                  class="mt-2 bg-red px-4 py-1.5 text-xs font-bold tracking-widest text-ink disabled:opacity-40"
+                  disabled={!billingCreds.trim() || !billingTable.trim()}
+                  onclick={saveBilling}
+                >CONNECT</button>
+                {#if billingError}
+                  <p class="mt-2 text-sm" style="color: var(--red)">▲ {billingError}</p>
+                {/if}
+              {/if}
             </div>
           {/if}
         </div>

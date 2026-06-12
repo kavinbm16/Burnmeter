@@ -1,3 +1,5 @@
+LICENSE
+README.md
 pyproject.toml
 backend/__init__.py
 backend/keys.py
@@ -10,12 +12,14 @@ backend/providers/base.py
 backend/providers/gemini_billing.py
 backend/providers/openai_adapter.py
 backend/proxy/__init__.py
+backend/proxy/gemini_live_proxy.py
 backend/proxy/gemini_proxy.py
 burnmeter.egg-info/PKG-INFO
 burnmeter.egg-info/SOURCES.txt
 burnmeter.egg-info/dependency_links.txt
 burnmeter.egg-info/requires.txt
 burnmeter.egg-info/top_level.txt
+tests/test_api.py
 tests/test_gemini_proxy.py
 tests/test_keys.py
 tests/test_openai_adapter.py

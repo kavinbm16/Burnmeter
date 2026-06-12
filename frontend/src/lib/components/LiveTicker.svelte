@@ -6,6 +6,10 @@
     model: string
     input_tokens: number
     output_tokens: number
+    audio_input_tokens?: number
+    audio_output_tokens?: number
+    source?: string
+    key_id?: string
     cost_usd: number | null
     ts: string
   }
@@ -70,7 +74,12 @@
           style="animation: ticker-in 0.25s ease-out;"
         >
           <span class="text-paper">{e.model}</span>
+          {#if e.source === 'live_proxy'}<span class="text-red">●LIVE</span>{/if}
           <span class="text-muted">+{fmtTokens(e.input_tokens + e.output_tokens)}</span>
+          {#if (e.audio_input_tokens ?? 0) + (e.audio_output_tokens ?? 0) > 0}
+            <span class="text-muted">({fmtTokens((e.audio_input_tokens ?? 0) + (e.audio_output_tokens ?? 0))} aud)</span>
+          {/if}
+          {#if e.key_id}<span class="text-muted">{e.key_id}</span>{/if}
           <span class="text-red">{fmtUsd(e.cost_usd, true)}</span>
         </span>
       {/each}

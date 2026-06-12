@@ -16,16 +16,21 @@ class UsageRecord:
     provider: str  # "openai" | "gemini"
     model: str
     date: str  # YYYY-MM-DD (UTC)
-    input_tokens: int = 0
+    input_tokens: int = 0   # all modalities (audio portion also in audio_input_tokens)
     output_tokens: int = 0
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
+    audio_input_tokens: int = 0   # Live API bills audio at premium rates
+    audio_output_tokens: int = 0
     requests: int = 0
     cost_usd: float | None = None
-    # "usage_api" | "proxy" | "billing_export" — surfaced in the UI so users
-    # know whether a number is provider-reported or locally estimated.
+    # "usage_api" | "proxy" | "live_proxy" | "billing_export" — surfaced in the
+    # UI so users know whether a number is provider-reported or estimated.
     source: str = "usage_api"
     cost_estimated: bool = False
+    # masked key hint ("AIz…ab12") — per-key breakdown for proxy traffic.
+    # Never the full key.
+    key_id: str = ""
 
 
 @dataclass(frozen=True)

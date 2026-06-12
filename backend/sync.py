@@ -72,9 +72,32 @@ class SyncEngine:
                 logger.exception("sync failed for %s", provider)
                 await self.store.set_sync_state(provider, "error", error=type(e).__name__)
 
+    async def sync_gemini_billing(self) -> None:
+        """Pull ground-truth Gemini cost from the BigQuery billing export (if configured)."""
+        creds = self.keystore.get_key("gemini_billing_creds")
+        table = self.keystore.get_key("gemini_billing_table")
+        if not creds or not table:
+            return
+        from backend.providers.gemini_billing import fetch_billing_costs
+
+        today = datetime.now(tz=timezone.utc).date()
+        start = today - timedelta(days=BACKFILL_DAYS)
+        try:
+            costs = await fetch_billing_costs(creds, table, start, today)
+            await self.store.upsert_costs(costs)
+            logger.info("gemini billing export: %d cost rows", len(costs))
+        except ProviderError as e:
+            await self.store.set_sync_state("gemini", "error", error=str(e))
+        except Exception as e:
+            logger.exception("gemini billing sync failed")
+            await self.store.set_sync_state("gemini", "error", error=type(e).__name__)
+
     async def sync_all(self, backfill: bool = False) -> None:
         rows = await self.store.list_providers()
-        await asyncio.gather(*(self.sync_provider(r["name"], backfill) for r in rows))
+        await asyncio.gather(
+            *(self.sync_provider(r["name"], backfill) for r in rows),
+            self.sync_gemini_billing(),
+        )
 
     async def _loop(self) -> None:
         while True:

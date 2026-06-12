@@ -85,6 +85,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+from backend.proxy.gemini_live_proxy import build_live_router  # noqa: E402
+
+# WebSocket route is matched before the HTTP catch-all for the same prefix
+app.include_router(build_live_router(store, keystore, on_capture=live_hub.publish))
 app.include_router(build_gemini_proxy(store, keystore, on_capture=live_hub.publish))
 
 
@@ -236,6 +240,56 @@ async def pricing():
         m: {"input_per_m": p.input_per_m, "output_per_m": p.output_per_m}
         for m, p in PRICES.items()
     }
+
+
+@app.get("/api/providers/{name}/keys")
+async def keys_breakdown(name: str, period: str = "30d", date: str | None = None):
+    if date:
+        start = end = date
+    else:
+        start, end = _period_range(period)
+    return {
+        "keys": await store.keys_breakdown(name, start, end),
+        "period": {"start": start, "end": end},
+    }
+
+
+class BillingConfig(BaseModel):
+    credentials_json: str
+    table: str  # fully-qualified billing export table
+
+
+@app.get("/api/billing/gemini")
+async def billing_status():
+    return {
+        "configured": keystore.get_key("gemini_billing_creds") is not None,
+        "table": keystore.get_key("gemini_billing_table"),
+    }
+
+
+@app.post("/api/billing/gemini")
+async def billing_configure(cfg: BillingConfig):
+    import json as _json
+
+    try:
+        info = _json.loads(cfg.credentials_json)
+        if info.get("type") != "service_account":
+            raise ValueError
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400, detail="not a service-account JSON")
+    keystore.set_key("gemini_billing_creds", cfg.credentials_json)
+    keystore.set_key("gemini_billing_table", cfg.table)
+    import asyncio as _asyncio
+
+    _asyncio.create_task(sync_engine.sync_gemini_billing())
+    return {"ok": True}
+
+
+@app.delete("/api/billing/gemini")
+async def billing_remove():
+    keystore.delete_key("gemini_billing_creds")
+    keystore.delete_key("gemini_billing_table")
+    return {"ok": True}
 
 
 @app.websocket("/ws/live")

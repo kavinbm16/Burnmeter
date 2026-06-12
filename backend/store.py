@@ -30,14 +30,17 @@ CREATE TABLE IF NOT EXISTS usage_records (
     model TEXT NOT NULL,
     date TEXT NOT NULL,
     source TEXT NOT NULL,
+    key_id TEXT NOT NULL DEFAULT '',
     input_tokens INTEGER NOT NULL DEFAULT 0,
     output_tokens INTEGER NOT NULL DEFAULT 0,
     cache_read_tokens INTEGER NOT NULL DEFAULT 0,
     cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+    audio_input_tokens INTEGER NOT NULL DEFAULT 0,
+    audio_output_tokens INTEGER NOT NULL DEFAULT 0,
     requests INTEGER NOT NULL DEFAULT 0,
     cost_usd REAL,
     cost_estimated INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (provider, model, date, source)
+    PRIMARY KEY (provider, model, date, source, key_id)
 );
 
 CREATE TABLE IF NOT EXISTS cost_records (
@@ -71,8 +74,55 @@ class Store:
     async def init(self) -> None:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         async with aiosqlite.connect(self.db_path) as db:
+            await self._migrate(db)
             await db.executescript(SCHEMA)
             await db.commit()
+
+    @staticmethod
+    async def _migrate(db: aiosqlite.Connection) -> None:
+        """v1 → v2: usage_records gained key_id + audio columns and a wider PK.
+
+        SQLite can't alter a primary key, so rebuild the table and copy rows.
+        """
+        cur = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='usage_records'"
+        )
+        if not await cur.fetchone():
+            return
+        cur = await db.execute("PRAGMA table_info(usage_records)")
+        cols = {row[1] for row in await cur.fetchall()}
+        if "key_id" in cols:
+            return
+        await db.execute("ALTER TABLE usage_records RENAME TO usage_records_v1")
+        await db.execute(
+            """CREATE TABLE usage_records (
+                provider TEXT NOT NULL,
+                model TEXT NOT NULL,
+                date TEXT NOT NULL,
+                source TEXT NOT NULL,
+                key_id TEXT NOT NULL DEFAULT '',
+                input_tokens INTEGER NOT NULL DEFAULT 0,
+                output_tokens INTEGER NOT NULL DEFAULT 0,
+                cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+                cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+                audio_input_tokens INTEGER NOT NULL DEFAULT 0,
+                audio_output_tokens INTEGER NOT NULL DEFAULT 0,
+                requests INTEGER NOT NULL DEFAULT 0,
+                cost_usd REAL,
+                cost_estimated INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (provider, model, date, source, key_id)
+            )"""
+        )
+        await db.execute(
+            """INSERT INTO usage_records
+               (provider, model, date, source, input_tokens, output_tokens,
+                cache_read_tokens, cache_write_tokens, requests, cost_usd, cost_estimated)
+               SELECT provider, model, date, source, input_tokens, output_tokens,
+                      cache_read_tokens, cache_write_tokens, requests, cost_usd, cost_estimated
+               FROM usage_records_v1"""
+        )
+        await db.execute("DROP TABLE usage_records_v1")
+        await db.commit()
 
     @asynccontextmanager
     async def _conn(self) -> AsyncIterator[aiosqlite.Connection]:
@@ -117,22 +167,26 @@ class Store:
         async with self._conn() as db:
             await db.executemany(
                 """INSERT INTO usage_records
-                   (provider, model, date, source, input_tokens, output_tokens,
-                    cache_read_tokens, cache_write_tokens, requests, cost_usd, cost_estimated)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)
-                   ON CONFLICT(provider, model, date, source) DO UPDATE SET
+                   (provider, model, date, source, key_id, input_tokens, output_tokens,
+                    cache_read_tokens, cache_write_tokens, audio_input_tokens,
+                    audio_output_tokens, requests, cost_usd, cost_estimated)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(provider, model, date, source, key_id) DO UPDATE SET
                      input_tokens=excluded.input_tokens,
                      output_tokens=excluded.output_tokens,
                      cache_read_tokens=excluded.cache_read_tokens,
                      cache_write_tokens=excluded.cache_write_tokens,
+                     audio_input_tokens=excluded.audio_input_tokens,
+                     audio_output_tokens=excluded.audio_output_tokens,
                      requests=excluded.requests,
                      cost_usd=excluded.cost_usd,
                      cost_estimated=excluded.cost_estimated""",
                 [
                     (
-                        r.provider, r.model, r.date, r.source,
+                        r.provider, r.model, r.date, r.source, r.key_id,
                         r.input_tokens, r.output_tokens,
                         r.cache_read_tokens, r.cache_write_tokens,
+                        r.audio_input_tokens, r.audio_output_tokens,
                         r.requests, r.cost_usd, int(r.cost_estimated),
                     )
                     for r in records
@@ -145,21 +199,25 @@ class Store:
         async with self._conn() as db:
             await db.execute(
                 """INSERT INTO usage_records
-                   (provider, model, date, source, input_tokens, output_tokens,
-                    cache_read_tokens, cache_write_tokens, requests, cost_usd, cost_estimated)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)
-                   ON CONFLICT(provider, model, date, source) DO UPDATE SET
+                   (provider, model, date, source, key_id, input_tokens, output_tokens,
+                    cache_read_tokens, cache_write_tokens, audio_input_tokens,
+                    audio_output_tokens, requests, cost_usd, cost_estimated)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(provider, model, date, source, key_id) DO UPDATE SET
                      input_tokens = input_tokens + excluded.input_tokens,
                      output_tokens = output_tokens + excluded.output_tokens,
                      cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
                      cache_write_tokens = cache_write_tokens + excluded.cache_write_tokens,
+                     audio_input_tokens = audio_input_tokens + excluded.audio_input_tokens,
+                     audio_output_tokens = audio_output_tokens + excluded.audio_output_tokens,
                      requests = requests + excluded.requests,
                      cost_usd = COALESCE(cost_usd, 0) + COALESCE(excluded.cost_usd, 0),
                      cost_estimated = MAX(cost_estimated, excluded.cost_estimated)""",
                 (
-                    r.provider, r.model, r.date, r.source,
+                    r.provider, r.model, r.date, r.source, r.key_id,
                     r.input_tokens, r.output_tokens,
                     r.cache_read_tokens, r.cache_write_tokens,
+                    r.audio_input_tokens, r.audio_output_tokens,
                     r.requests, r.cost_usd, int(r.cost_estimated),
                 ),
             )
@@ -225,6 +283,8 @@ class Store:
                           SUM(output_tokens) AS output_tokens,
                           SUM(cache_read_tokens) AS cache_read_tokens,
                           SUM(cache_write_tokens) AS cache_write_tokens,
+                          SUM(audio_input_tokens) AS audio_input_tokens,
+                          SUM(audio_output_tokens) AS audio_output_tokens,
                           SUM(requests) AS requests,
                           SUM(cost_usd) AS cost_usd,
                           MAX(cost_estimated) AS cost_estimated
@@ -270,12 +330,33 @@ class Store:
                           SUM(input_tokens) AS input_tokens,
                           SUM(output_tokens) AS output_tokens,
                           SUM(cache_read_tokens) AS cache_read_tokens,
+                          SUM(audio_input_tokens) AS audio_input_tokens,
+                          SUM(audio_output_tokens) AS audio_output_tokens,
                           SUM(requests) AS requests,
                           SUM(cost_usd) AS cost_usd,
                           MAX(cost_estimated) AS cost_estimated
                    FROM usage_records WHERE date BETWEEN ? AND ?
                    GROUP BY model, provider ORDER BY cost_usd DESC""",
                 (start, end),
+            )
+            return [dict(r) for r in await cur.fetchall()]
+
+    async def keys_breakdown(self, provider: str, start: str, end: str) -> list[dict[str, Any]]:
+        """Per-API-key totals for proxy-captured traffic (key_id is the masked hint)."""
+        async with self._conn() as db:
+            cur = await db.execute(
+                """SELECT key_id, COUNT(DISTINCT model) AS model_count,
+                          SUM(input_tokens) AS input_tokens,
+                          SUM(output_tokens) AS output_tokens,
+                          SUM(audio_input_tokens) AS audio_input_tokens,
+                          SUM(audio_output_tokens) AS audio_output_tokens,
+                          SUM(requests) AS requests,
+                          SUM(cost_usd) AS cost_usd,
+                          MAX(cost_estimated) AS cost_estimated
+                   FROM usage_records
+                   WHERE provider=? AND date BETWEEN ? AND ? AND key_id != ''
+                   GROUP BY key_id ORDER BY cost_usd DESC""",
+                (provider, start, end),
             )
             return [dict(r) for r in await cur.fetchall()]
 
@@ -287,6 +368,8 @@ class Store:
                           SUM(output_tokens) AS output_tokens,
                           SUM(cache_read_tokens) AS cache_read_tokens,
                           SUM(cache_write_tokens) AS cache_write_tokens,
+                          SUM(audio_input_tokens) AS audio_input_tokens,
+                          SUM(audio_output_tokens) AS audio_output_tokens,
                           SUM(requests) AS requests,
                           SUM(cost_usd) AS cost_usd,
                           MAX(cost_estimated) AS cost_estimated

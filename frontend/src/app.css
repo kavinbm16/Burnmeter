@@ -32,7 +32,7 @@
 }
 
 html {
-  font-size: 105%;
+  font-size: 116%;
   scrollbar-color: var(--hairline) var(--ink);
 }
 
@@ -58,22 +58,22 @@ body {
 
 @utility cell {
   background: var(--ink);
-  padding: --spacing(5);
+  padding: --spacing(6);
   min-width: 0;
 }
 
 @utility microlabel {
-  font-size: 0.625rem;
+  font-size: 0.72rem;
   font-weight: 600;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--red);
 }
 
 @utility microlabel-dim {
-  font-size: 0.625rem;
+  font-size: 0.68rem;
   font-weight: 500;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--muted);
 }

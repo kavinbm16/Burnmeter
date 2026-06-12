@@ -53,6 +53,20 @@ export interface ModelRow {
   output_tokens: number
   cache_read_tokens: number
   cache_write_tokens: number
+  audio_input_tokens: number
+  audio_output_tokens: number
+  requests: number
+  cost_usd: number | null
+  cost_estimated: number
+}
+
+export interface KeyRow {
+  key_id: string
+  model_count: number
+  input_tokens: number
+  output_tokens: number
+  audio_input_tokens: number
+  audio_output_tokens: number
   requests: number
   cost_usd: number | null
   cost_estimated: number
@@ -115,6 +129,23 @@ export const api = {
     ),
   pricing: () =>
     get<Record<string, { input_per_m: number; output_per_m: number }>>('/api/pricing'),
+  keys: (name: string, period: string) =>
+    get<{ keys: KeyRow[] }>(`/api/providers/${name}/keys?period=${period}`),
+  billingStatus: () =>
+    get<{ configured: boolean; table: string | null }>('/api/billing/gemini'),
+  billingConfigure: async (credentials_json: string, table: string) => {
+    const res = await fetch('/api/billing/gemini', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credentials_json, table }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }))
+      throw new Error(body.detail ?? `HTTP ${res.status}`)
+    }
+    return res.json()
+  },
+  billingRemove: () => fetch('/api/billing/gemini', { method: 'DELETE' }),
   providers: () => get<ProvidersResponse>('/api/providers'),
   breakdown: (name: string, period: string) =>
     get<Breakdown>(`/api/providers/${name}/breakdown?period=${period}`),

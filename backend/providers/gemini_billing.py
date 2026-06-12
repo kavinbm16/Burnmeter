@@ -40,13 +40,15 @@ async def fetch_billing_costs(
     creds = service_account.Credentials.from_service_account_info(info)
     client = bigquery.Client(credentials=creds, project=info.get("project_id"))
 
+    # group by SKU so audio-input / text-output / live-session costs split out
     query = f"""
         SELECT DATE(usage_start_time) AS day,
+               sku.description AS sku,
                SUM(cost) + SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0)) AS cost_usd
         FROM `{table}`
         WHERE service.description = @service
           AND DATE(usage_start_time) BETWEEN @start AND @end
-        GROUP BY day ORDER BY day
+        GROUP BY day, sku ORDER BY day
     """
     job = client.query(
         query,
@@ -63,7 +65,7 @@ async def fetch_billing_costs(
             provider="gemini",
             date=row.day.isoformat(),
             cost_usd=float(row.cost_usd),
-            line_item=GEMINI_SERVICE,
+            line_item=row.sku or GEMINI_SERVICE,
             source="billing_export",
         )
         for row in job.result()

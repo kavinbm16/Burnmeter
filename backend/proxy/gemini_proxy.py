@@ -30,7 +30,7 @@ from fastapi.responses import Response, StreamingResponse
 
 from backend.keys import KeyStore
 from backend.pricing import estimate_cost_usd
-from backend.providers.base import UsageRecord
+from backend.providers.base import UsageRecord, mask_key
 from backend.store import Store
 
 logger = logging.getLogger(__name__)
@@ -85,39 +85,74 @@ def _last_usage_from_json(buffer: bytes) -> dict | None:
     return None
 
 
-async def _record(
-    store: Store, model: str, usage: dict, on_capture: Callable | None = None
-) -> None:
+def _modality_tokens(details: list | None, modality: str) -> int:
+    """Sum tokenCount entries of one modality from {prompt,response}TokensDetails."""
+    if not details:
+        return 0
+    return sum(
+        int(d.get("tokenCount", 0))
+        for d in details
+        if isinstance(d, dict) and d.get("modality", "").upper() == modality
+    )
+
+
+def usage_to_record(model: str, usage: dict, source: str, key_id: str) -> UsageRecord:
+    """Normalize a Gemini usageMetadata payload (HTTP or Live) to a UsageRecord.
+
+    Live responses split tokens by modality in promptTokensDetails /
+    responseTokensDetails; audio tokens bill at premium rates.
+    """
     prompt = int(usage.get("promptTokenCount", 0))
     candidates = int(usage.get("candidatesTokenCount", 0))
+    # Live uses responseTokenCount instead of candidatesTokenCount
+    response = int(usage.get("responseTokenCount", 0)) or candidates
     thoughts = int(usage.get("thoughtsTokenCount", 0))
     cached = int(usage.get("cachedContentTokenCount", 0))
-    output = candidates + thoughts  # thinking tokens are billed as output
-    cost = estimate_cost_usd(model, prompt, output, cached)
-    await store.increment_usage(
-        UsageRecord(
-            provider="gemini",
-            model=model,
-            date=datetime.now(tz=timezone.utc).strftime("%Y-%m-%d"),
-            input_tokens=prompt,
-            output_tokens=output,
-            cache_read_tokens=cached,
-            requests=1,
-            cost_usd=cost,
-            source="proxy",
-            cost_estimated=True,
-        )
+    output = response + thoughts  # thinking tokens are billed as output
+    audio_in = _modality_tokens(usage.get("promptTokensDetails"), "AUDIO")
+    audio_out = _modality_tokens(usage.get("responseTokensDetails"), "AUDIO")
+    cost = estimate_cost_usd(model, prompt, output, cached, audio_in, audio_out)
+    return UsageRecord(
+        provider="gemini",
+        model=model,
+        date=datetime.now(tz=timezone.utc).strftime("%Y-%m-%d"),
+        input_tokens=prompt,
+        output_tokens=output,
+        cache_read_tokens=cached,
+        audio_input_tokens=audio_in,
+        audio_output_tokens=audio_out,
+        requests=1,
+        cost_usd=cost,
+        source=source,
+        cost_estimated=True,
+        key_id=key_id,
     )
+
+
+async def record_usage(
+    store: Store,
+    model: str,
+    usage: dict,
+    on_capture: Callable | None = None,
+    source: str = "proxy",
+    key_id: str = "",
+) -> None:
+    rec = usage_to_record(model, usage, source, key_id)
+    await store.increment_usage(rec)
     if on_capture is not None:
         try:
             await on_capture(
                 {
                     "provider": "gemini",
                     "model": model,
-                    "input_tokens": prompt,
-                    "output_tokens": output,
-                    "cache_read_tokens": cached,
-                    "cost_usd": cost,
+                    "input_tokens": rec.input_tokens,
+                    "output_tokens": rec.output_tokens,
+                    "cache_read_tokens": rec.cache_read_tokens,
+                    "audio_input_tokens": rec.audio_input_tokens,
+                    "audio_output_tokens": rec.audio_output_tokens,
+                    "cost_usd": rec.cost_usd,
+                    "source": source,
+                    "key_id": key_id,
                     "ts": datetime.now(tz=timezone.utc).isoformat(),
                 }
             )
@@ -144,6 +179,13 @@ def build_router(
             stored = keystore.get_key("gemini")
             if stored:
                 headers["x-goog-api-key"] = stored
+
+        used_key = (
+            next((v for k, v in request.headers.items() if k.lower() == "x-goog-api-key"), None)
+            or params.get("key")
+            or headers.get("x-goog-api-key")
+        )
+        key_id = mask_key(used_key) if used_key else ""
 
         body = await request.body()
         model_match = MODEL_RE.search(path)
@@ -173,7 +215,7 @@ def build_router(
                         usage = _last_usage_from_sse(bytes(buffer)) or _last_usage_from_json(bytes(buffer))
                         if usage:
                             try:
-                                await _record(store, model, usage, on_capture)
+                                await record_usage(store, model, usage, on_capture, source="proxy", key_id=key_id)
                             except Exception:
                                 logger.exception("failed to record proxy usage")
 
@@ -188,7 +230,7 @@ def build_router(
             usage = _last_usage_from_json(content)
             if usage:
                 try:
-                    await _record(store, model, usage, on_capture)
+                    await record_usage(store, model, usage, on_capture, source="proxy", key_id=key_id)
                 except Exception:
                     logger.exception("failed to record proxy usage")
         return Response(content=content, status_code=resp.status_code, headers=resp_headers)
