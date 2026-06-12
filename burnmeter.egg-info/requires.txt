@@ -1,0 +1,15 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+httpx>=0.27
+aiosqlite>=0.20
+keyring>=25.0
+cryptography>=43.0
+pydantic>=2.8
+
+[billing]
+google-cloud-bigquery>=3.25
+
+[dev]
+pytest>=8.0
+pytest-asyncio>=0.24
+respx>=0.21

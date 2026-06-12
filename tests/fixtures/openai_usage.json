@@ -1,0 +1,44 @@
+{
+  "object": "page",
+  "data": [
+    {
+      "object": "bucket",
+      "start_time": 1780358400,
+      "end_time": 1780444800,
+      "results": [
+        {
+          "object": "organization.usage.completions.result",
+          "input_tokens": 12000,
+          "output_tokens": 3400,
+          "input_cached_tokens": 2000,
+          "input_audio_tokens": 0,
+          "output_audio_tokens": 0,
+          "num_model_requests": 42,
+          "project_id": null,
+          "user_id": null,
+          "api_key_id": null,
+          "model": "gpt-4o-mini-2024-07-18",
+          "batch": null,
+          "service_tier": null
+        },
+        {
+          "object": "organization.usage.completions.result",
+          "input_tokens": 5000,
+          "output_tokens": 900,
+          "input_cached_tokens": 0,
+          "input_audio_tokens": 0,
+          "output_audio_tokens": 0,
+          "num_model_requests": 7,
+          "project_id": null,
+          "user_id": null,
+          "api_key_id": null,
+          "model": "gpt-4.1-2025-04-14",
+          "batch": null,
+          "service_tier": null
+        }
+      ]
+    }
+  ],
+  "has_more": false,
+  "next_page": null
+}

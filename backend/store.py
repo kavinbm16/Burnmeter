@@ -95,7 +95,8 @@ class Store:
     async def list_providers(self) -> list[dict[str, Any]]:
         async with await self._conn() as db:
             cur = await db.execute(
-                """SELECT p.*, s.last_synced_at, s.status AS sync_status, s.error AS sync_error
+                """SELECT p.*, s.last_synced_at, s.watermark_date,
+                          s.status AS sync_status, s.error AS sync_error
                    FROM providers p LEFT JOIN sync_state s ON s.provider = p.name
                    ORDER BY p.name"""
             )
