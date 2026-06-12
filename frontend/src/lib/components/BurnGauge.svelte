@@ -66,11 +66,11 @@
       <p class="microlabel-dim mt-2">set budget → pace projection</p>
     {/if}
   {:else}
-    <div class="numeral mt-2 text-3xl" style:color={over ? 'var(--red)' : 'var(--paper)'}>
+    <div class="numeral mt-3 text-4xl" style:color={over ? 'var(--red)' : 'var(--paper)'}>
       {fmtUsd(budget.spent_mtd)}
     </div>
 
-    <div class="relative mt-4 h-3 w-full bg-ink-2">
+    <div class="relative mt-5 h-3 w-full bg-ink-2">
       <div class="absolute inset-y-0 left-0" style="width: {pct}%; background: var(--red);"></div>
       <div
         class="absolute inset-y-[-4px] border-l border-dashed border-paper/60"

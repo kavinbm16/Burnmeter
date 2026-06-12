@@ -63,17 +63,17 @@
 </script>
 
 {#if error}
-  <div class="bento grid-cols-1"><div class="cell text-sm" style="color: var(--red)">{error}</div></div>
+  <div class="bento grid-cols-1"><div class="cell" style="color: var(--red)">{error}</div></div>
 {:else if !data || !budget || !heat}
-  <div class="bento grid-cols-4">
-    {#each Array(4) as _}<div class="cell h-32 animate-pulse"></div>{/each}
+  <div class="bento grid-cols-2 md:grid-cols-4">
+    {#each Array(4) as _}<div class="cell h-36 animate-pulse"></div>{/each}
   </div>
 {:else if data.by_provider.length === 0 && !dayFilter}
   <div class="bento grid-cols-1">
-    <div class="cell py-20 text-center">
-      <div class="numeral text-5xl">000<span style="color: var(--red)">.</span>00</div>
-      <p class="microlabel mt-4">no data recorded</p>
-      <p class="mx-auto mt-3 max-w-md text-sm" style="color: var(--muted)">
+    <div class="cell py-24 text-center">
+      <div class="numeral text-6xl">000<span style="color: var(--red)">.</span>00</div>
+      <p class="microlabel mt-5">no data recorded</p>
+      <p class="mx-auto mt-4 max-w-md" style="color: var(--muted)">
         Add a provider key under PROVIDERS. OpenAI backfills 90 days of history;
         Gemini counts live through the local proxy.
       </p>
@@ -82,51 +82,58 @@
 {:else}
   {#if dayFilter}
     <button
-      class="microlabel mb-2 flex items-center gap-2 hover:text-paper"
+      class="microlabel mb-3 flex items-center gap-2 hover:text-paper"
       onclick={() => (dayFilter = null)}
     >
       ◼ filtered to {dayFilter} — clear ✕
     </button>
   {/if}
 
-  <div class="bento grid-cols-1 md:grid-cols-3 lg:grid-cols-5">
-    <!-- dominant spend cell -->
-    <div class="cell md:col-span-2 lg:col-span-2 lg:row-span-2">
+  <!-- ── Section 1: KPI stats ── -->
+  <div class="bento grid-cols-2 md:grid-cols-4">
+    <!-- hero: total spend + daily bar -->
+    <div class="cell col-span-2 row-span-2 md:col-span-2">
       <div class="microlabel">Total spend</div>
-      <div class="mt-3 flex items-baseline text-6xl lg:text-7xl">
+      <div class="mt-4 flex items-baseline text-7xl lg:text-8xl">
         <Odometer value={(data.totals.cost_usd ?? 0).toFixed(2)} />
       </div>
       <div class="microlabel-dim mt-2">
         {anyEstimated ? '≈ ' : ''}USD — {data.period.start} → {data.period.end}
       </div>
-      <div class="mt-6">
-        <BarStrip bars={dailyBars} height={130} highlight={dayFilter} />
+      <div class="mt-8">
+        <BarStrip bars={dailyBars} height={150} highlight={dayFilter} />
       </div>
     </div>
 
-    <!-- satellite metrics -->
+    <!-- satellite: input -->
     <div class="cell">
       <div class="microlabel">Input</div>
-      <div class="numeral mt-2 text-3xl"><Odometer value={fmtTokens(data.totals.input_tokens)} /></div>
-      <div class="microlabel-dim mt-1">tokens</div>
+      <div class="numeral mt-3 text-4xl"><Odometer value={fmtTokens(data.totals.input_tokens)} /></div>
+      <div class="microlabel-dim mt-2">tokens</div>
     </div>
+
+    <!-- satellite: output -->
     <div class="cell">
       <div class="microlabel">Output</div>
-      <div class="numeral mt-2 text-3xl"><Odometer value={fmtTokens(data.totals.output_tokens)} /></div>
-      <div class="microlabel-dim mt-1">tokens</div>
+      <div class="numeral mt-3 text-4xl"><Odometer value={fmtTokens(data.totals.output_tokens)} /></div>
+      <div class="microlabel-dim mt-2">tokens</div>
     </div>
+
+    <!-- satellite: requests -->
     <div class="cell">
       <div class="microlabel">Requests</div>
-      <div class="numeral mt-2 text-3xl"><Odometer value={fmtTokens(data.totals.requests)} /></div>
-      <div class="microlabel-dim mt-1">calls</div>
+      <div class="numeral mt-3 text-4xl"><Odometer value={fmtTokens(data.totals.requests)} /></div>
+      <div class="microlabel-dim mt-2">calls</div>
     </div>
 
     <!-- burn gauge -->
-    <div class="cell md:col-span-2 lg:col-span-3">
+    <div class="cell">
       <BurnGauge budget={budget} onsave={saveBudget} />
     </div>
+  </div>
 
-    <!-- providers -->
+  <!-- ── Section 2: Providers + Heatmap ── -->
+  <div class="bento mt-px grid-cols-2 md:grid-cols-4">
     {#each data.by_provider as p (p.provider)}
       <div
         class="cell group cursor-pointer transition-colors hover:bg-ink-2"
@@ -139,16 +146,16 @@
           <span class="microlabel">{p.provider}</span>
           <span class="microlabel-dim opacity-0 transition-opacity group-hover:opacity-100">open →</span>
         </div>
-        <div class="numeral mt-2 text-2xl">{fmtUsd(p.cost_usd, !!p.cost_estimated)}</div>
-        <div class="microlabel-dim mt-1">
+        <div class="numeral mt-3 text-3xl">{fmtUsd(p.cost_usd, !!p.cost_estimated)}</div>
+        <div class="microlabel-dim mt-2">
           {fmtTokens(p.input_tokens)} in / {fmtTokens(p.output_tokens)} out
         </div>
       </div>
     {/each}
 
-    <!-- heatmap -->
-    <div class="cell md:col-span-3 lg:col-span-3">
-      <div class="microlabel mb-3">Spend calendar</div>
+    <!-- heatmap — always full width -->
+    <div class="cell col-span-2 md:col-span-4">
+      <div class="microlabel mb-4">Spend calendar</div>
       <Heatmap
         days={heat.days}
         start={heat.start}
@@ -157,20 +164,22 @@
         onselect={(d) => (dayFilter = d)}
       />
     </div>
+  </div>
 
-    <!-- leaderboard -->
-    <div class="cell md:col-span-3 lg:col-span-5">
+  <!-- ── Section 3: Model leaderboard ── -->
+  <div class="bento mt-px grid-cols-1">
+    <div class="cell">
       <div class="flex items-baseline justify-between">
         <span class="microlabel">Model leaderboard</span>
         <span class="microlabel-dim">spend · tokens · $/1M · in:out</span>
       </div>
-      <div class="mt-2">
+      <div class="mt-4">
         <Leaderboard {models} />
       </div>
     </div>
   </div>
 
   {#if anyEstimated}
-    <p class="microlabel-dim mt-3">≈ — estimated from local price table (proxy traffic). billed figures may differ.</p>
+    <p class="microlabel-dim mt-4">≈ — estimated from local price table (proxy traffic). billed figures may differ.</p>
   {/if}
 {/if}

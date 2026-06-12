@@ -51,14 +51,14 @@
   <header class="hairline-b sticky top-0 z-10 backdrop-blur" style="background: color-mix(in oklch, var(--ink) 88%, transparent);">
     <div class="flex items-center gap-8 py-4">
       <button
-        class="text-base font-bold"
+        class="text-lg font-bold"
         style="letter-spacing: 0.25em;"
         onclick={() => { tab = 'dashboard'; detailProvider = null }}
       >
         BURNMETER<span style="color: var(--red)">®</span>
       </button>
 
-      <nav class="flex gap-5">
+      <nav class="flex gap-6">
         {#each NAV as n (n.id)}
           <button
             class="microlabel-dim pb-0.5 transition-colors"
