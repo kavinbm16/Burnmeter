@@ -65,6 +65,32 @@ export interface Breakdown {
   period: { start: string; end: string }
 }
 
+export interface Budget {
+  monthly_usd: number | null
+  spent_mtd: number
+  projected_eom: number
+  days_elapsed: number
+  days_in_month: number
+}
+
+export interface HeatmapDay {
+  date: string
+  cost_usd: number | null
+  total_tokens: number
+  requests: number
+}
+
+export interface LeaderboardModel {
+  model: string
+  provider: string
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  requests: number
+  cost_usd: number | null
+  cost_estimated: number
+}
+
 async function get<T>(url: string): Promise<T> {
   const res = await fetch(url)
   if (!res.ok) throw new Error(`${url} → ${res.status}`)
@@ -72,7 +98,23 @@ async function get<T>(url: string): Promise<T> {
 }
 
 export const api = {
-  overview: (period: string) => get<Overview>(`/api/overview?period=${period}`),
+  overview: (period: string, date?: string | null) =>
+    get<Overview>(`/api/overview?period=${period}${date ? `&date=${date}` : ''}`),
+  budget: () => get<Budget>('/api/budget'),
+  setBudget: (monthly_usd: number | null) =>
+    fetch('/api/budget', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ monthly_usd }),
+    }),
+  heatmap: (days = 120) =>
+    get<{ start: string; end: string; days: HeatmapDay[] }>(`/api/heatmap?days=${days}`),
+  models: (period: string, date?: string | null) =>
+    get<{ models: LeaderboardModel[] }>(
+      `/api/models?period=${period}${date ? `&date=${date}` : ''}`
+    ),
+  pricing: () =>
+    get<Record<string, { input_per_m: number; output_per_m: number }>>('/api/pricing'),
   providers: () => get<ProvidersResponse>('/api/providers'),
   breakdown: (name: string, period: string) =>
     get<Breakdown>(`/api/providers/${name}/breakdown?period=${period}`),

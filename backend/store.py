@@ -56,6 +56,11 @@ CREATE TABLE IF NOT EXISTS sync_state (
     status TEXT NOT NULL DEFAULT 'idle',
     error TEXT
 );
+
+CREATE TABLE IF NOT EXISTS budgets (
+    scope TEXT PRIMARY KEY DEFAULT 'global',
+    monthly_usd REAL NOT NULL
+);
 """
 
 
@@ -190,6 +195,26 @@ class Store:
             )
             await db.commit()
 
+    # -- budget ------------------------------------------------------------------
+
+    async def get_budget(self) -> float | None:
+        async with self._conn() as db:
+            cur = await db.execute("SELECT monthly_usd FROM budgets WHERE scope='global'")
+            row = await cur.fetchone()
+            return row["monthly_usd"] if row else None
+
+    async def set_budget(self, monthly_usd: float | None) -> None:
+        async with self._conn() as db:
+            if monthly_usd is None:
+                await db.execute("DELETE FROM budgets WHERE scope='global'")
+            else:
+                await db.execute(
+                    """INSERT INTO budgets(scope, monthly_usd) VALUES('global', ?)
+                       ON CONFLICT(scope) DO UPDATE SET monthly_usd=excluded.monthly_usd""",
+                    (monthly_usd,),
+                )
+            await db.commit()
+
     # -- aggregates ------------------------------------------------------------
 
     async def overview(self, start: str, end: str) -> dict[str, Any]:
@@ -225,6 +250,34 @@ class Store:
             "requests": sum(p["requests"] or 0 for p in by_provider),
         }
         return {"totals": totals, "by_provider": by_provider, "daily": daily}
+
+    async def heatmap(self, start: str, end: str) -> list[dict[str, Any]]:
+        async with self._conn() as db:
+            cur = await db.execute(
+                """SELECT date, SUM(cost_usd) AS cost_usd,
+                          SUM(input_tokens + output_tokens) AS total_tokens,
+                          SUM(requests) AS requests
+                   FROM usage_records WHERE date BETWEEN ? AND ?
+                   GROUP BY date ORDER BY date""",
+                (start, end),
+            )
+            return [dict(r) for r in await cur.fetchall()]
+
+    async def models_leaderboard(self, start: str, end: str) -> list[dict[str, Any]]:
+        async with self._conn() as db:
+            cur = await db.execute(
+                """SELECT model, provider,
+                          SUM(input_tokens) AS input_tokens,
+                          SUM(output_tokens) AS output_tokens,
+                          SUM(cache_read_tokens) AS cache_read_tokens,
+                          SUM(requests) AS requests,
+                          SUM(cost_usd) AS cost_usd,
+                          MAX(cost_estimated) AS cost_estimated
+                   FROM usage_records WHERE date BETWEEN ? AND ?
+                   GROUP BY model, provider ORDER BY cost_usd DESC""",
+                (start, end),
+            )
+            return [dict(r) for r in await cur.fetchall()]
 
     async def breakdown(self, provider: str, start: str, end: str) -> dict[str, Any]:
         async with self._conn() as db:

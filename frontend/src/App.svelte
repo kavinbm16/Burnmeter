@@ -1,15 +1,28 @@
 <script lang="ts">
-  import { Flame, LayoutDashboard, Settings as SettingsIcon, RefreshCw } from '@lucide/svelte'
-  import Overview from '$lib/views/Overview.svelte'
+  import Dashboard from '$lib/views/Dashboard.svelte'
   import ProviderDetail from '$lib/views/ProviderDetail.svelte'
   import Settings from '$lib/views/Settings.svelte'
-  import { api } from '$lib/api'
 
-  let tab = $state<'overview' | 'settings'>('overview')
+  // gpt-tokenizer ships multi-MB BPE ranks — load the playground on demand
+  const playgroundImport = () => import('$lib/views/Playground.svelte')
+  import LiveTicker from '$lib/components/LiveTicker.svelte'
+  import Poster from '$lib/components/Poster.svelte'
+  import { api } from '$lib/api'
+  import type { LeaderboardModel, Overview } from '$lib/api'
+
+  type Tab = 'dashboard' | 'playground' | 'providers'
+  let tab = $state<Tab>('dashboard')
   let detailProvider = $state<string | null>(null)
-  let period = $state('30d')
+  let period = $state('mtd')
   let syncing = $state(false)
   let refreshTick = $state(0)
+  let poster = $state<{ data: Overview; models: LeaderboardModel[] } | null>(null)
+
+  const NAV: { id: Tab; label: string }[] = [
+    { id: 'dashboard', label: 'DASHBOARD' },
+    { id: 'playground', label: 'TOKENIZER' },
+    { id: 'providers', label: 'PROVIDERS' },
+  ]
 
   async function syncNow() {
     syncing = true
@@ -20,62 +33,75 @@
       syncing = false
     }
   }
+
+  async function exportPoster() {
+    const [o, m] = await Promise.all([api.overview(period), api.models(period)])
+    poster = { data: o, models: m.models }
+  }
+
+  let liveDebounce: ReturnType<typeof setTimeout>
+  function onLiveEvent() {
+    clearTimeout(liveDebounce)
+    liveDebounce = setTimeout(() => refreshTick++, 800)
+  }
 </script>
 
-<div class="min-h-screen">
-  <header class="border-b border-border bg-surface/60 backdrop-blur sticky top-0 z-10">
-    <div class="mx-auto flex max-w-6xl items-center gap-6 px-6 py-3">
+<div class="mx-auto min-h-screen max-w-7xl px-6">
+  <!-- masthead -->
+  <header class="hairline-b sticky top-0 z-10 backdrop-blur" style="background: color-mix(in oklch, var(--ink) 88%, transparent);">
+    <div class="flex items-center gap-8 py-4">
       <button
-        class="flex items-center gap-2 text-lg font-bold tracking-tight"
-        onclick={() => { tab = 'overview'; detailProvider = null }}
+        class="text-base font-bold"
+        style="letter-spacing: 0.25em;"
+        onclick={() => { tab = 'dashboard'; detailProvider = null }}
       >
-        <Flame class="size-5 text-primary" />
-        burnmeter
+        BURNMETER<span style="color: var(--red)">®</span>
       </button>
 
-      <nav class="flex items-center gap-1 text-sm">
-        <button
-          class="flex items-center gap-1.5 rounded-md px-3 py-1.5 transition-colors
-                 {tab === 'overview' ? 'bg-surface-2 text-foreground' : 'text-muted-foreground hover:text-foreground'}"
-          onclick={() => { tab = 'overview'; detailProvider = null }}
-        >
-          <LayoutDashboard class="size-4" /> Dashboard
-        </button>
-        <button
-          class="flex items-center gap-1.5 rounded-md px-3 py-1.5 transition-colors
-                 {tab === 'settings' ? 'bg-surface-2 text-foreground' : 'text-muted-foreground hover:text-foreground'}"
-          onclick={() => { tab = 'settings'; detailProvider = null }}
-        >
-          <SettingsIcon class="size-4" /> Providers
-        </button>
+      <nav class="flex gap-5">
+        {#each NAV as n (n.id)}
+          <button
+            class="microlabel-dim pb-0.5 transition-colors"
+            style={tab === n.id ? 'color: var(--paper); border-bottom: 1px solid var(--red);' : ''}
+            onclick={() => { tab = n.id; detailProvider = null }}
+          >{n.label}</button>
+        {/each}
       </nav>
 
-      <div class="ml-auto flex items-center gap-3">
-        {#if tab === 'overview'}
+      <div class="ml-auto flex items-center gap-4">
+        {#if tab === 'dashboard'}
           <select
             bind:value={period}
-            class="rounded-md border border-border bg-surface-2 px-2 py-1.5 text-sm"
+            class="microlabel-dim cursor-pointer border border-hairline bg-ink px-2 py-1.5 focus:border-red focus:outline-none"
           >
-            <option value="mtd">Month to date</option>
-            <option value="30d">Last 30 days</option>
-            <option value="90d">Last 90 days</option>
+            <option value="mtd">MTD</option>
+            <option value="30d">30D</option>
+            <option value="90d">90D</option>
           </select>
+          <button class="microlabel-dim hover:text-paper" onclick={exportPoster}>POSTER ↓</button>
         {/if}
         <button
-          class="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm
-                 text-muted-foreground hover:text-foreground disabled:opacity-50"
+          class="microlabel border border-hairline px-3 py-1.5 transition-colors hover:border-red disabled:opacity-40"
           onclick={syncNow}
           disabled={syncing}
-        >
-          <RefreshCw class="size-4 {syncing ? 'animate-spin' : ''}" /> Sync
-        </button>
+        >{syncing ? 'SYNCING…' : 'SYNC'}</button>
       </div>
+    </div>
+    <div class="hairline-b -mx-6"></div>
+    <div class="flex items-center py-2">
+      <LiveTicker onevent={onLiveEvent} />
     </div>
   </header>
 
-  <main class="mx-auto max-w-6xl px-6 py-6">
-    {#if tab === 'settings'}
+  <main class="py-6">
+    {#if tab === 'providers'}
       <Settings />
+    {:else if tab === 'playground'}
+      {#await playgroundImport()}
+        <div class="bento grid-cols-1"><div class="cell h-48 animate-pulse"></div></div>
+      {:then { default: Playground }}
+        <Playground />
+      {/await}
     {:else if detailProvider}
       <ProviderDetail
         provider={detailProvider}
@@ -84,14 +110,18 @@
         onback={() => (detailProvider = null)}
       />
     {:else}
-      <Overview {period} {refreshTick} ondrill={(p) => (detailProvider = p)} />
+      <Dashboard {period} {refreshTick} ondrill={(p) => (detailProvider = p)} />
     {/if}
   </main>
 
-  <footer class="mx-auto max-w-6xl px-6 pb-6 text-xs text-muted-foreground">
-    Local-first · your keys never leave this machine ·
-    <a class="underline hover:text-foreground" href="https://github.com/kavinbm16/burnmeter" target="_blank" rel="noreferrer">
-      source
-    </a>
+  <footer class="hairline-b border-t border-hairline py-4">
+    <span class="microlabel-dim">
+      LOCAL-FIRST — KEYS NEVER LEAVE THIS MACHINE —
+      <a class="underline hover:text-paper" href="https://github.com/kavinbm16/burnmeter" target="_blank" rel="noreferrer">SOURCE</a>
+    </span>
   </footer>
 </div>
+
+{#if poster}
+  <Poster data={poster.data} models={poster.models} onclose={() => (poster = null)} />
+{/if}

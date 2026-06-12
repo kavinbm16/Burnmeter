@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { ArrowLeft } from '@lucide/svelte'
   import { api, fmtTokens, fmtUsd } from '$lib/api'
   import type { Breakdown } from '$lib/api'
+  import BarStrip from '$lib/components/BarStrip.svelte'
 
   let {
     provider,
@@ -25,72 +25,66 @@
   const rows = $derived(
     [...(data?.by_model ?? [])].sort((a, b) => (b[sortBy] ?? 0) - (a[sortBy] ?? 0))
   )
-  const maxDailyCost = $derived(
-    Math.max(0.0001, ...(data?.daily ?? []).map((d) => d.cost_usd ?? 0))
+  const bars = $derived(
+    (data?.daily ?? []).map((d) => ({
+      date: d.date,
+      cost: d.cost_usd ?? 0,
+      tokens: d.input_tokens + d.output_tokens,
+    }))
   )
-  const billedTotal = $derived(
-    (data?.billed_costs ?? []).reduce((a, b) => a + b.cost_usd, 0)
-  )
+  const billedTotal = $derived((data?.billed_costs ?? []).reduce((a, b) => a + b.cost_usd, 0))
+
+  const COLS: { key: typeof sortBy; label: string }[] = [
+    { key: 'input_tokens', label: 'INPUT' },
+    { key: 'output_tokens', label: 'OUTPUT' },
+    { key: 'requests', label: 'REQS' },
+    { key: 'cost_usd', label: 'COST' },
+  ]
 </script>
 
-<div class="space-y-4">
-  <button class="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground" onclick={onback}>
-    <ArrowLeft class="size-4" /> Dashboard
-  </button>
+<button class="microlabel-dim mb-4 hover:text-paper" onclick={onback}>← DASHBOARD</button>
 
-  <h1 class="text-xl font-bold capitalize">{provider}</h1>
+<h1 class="numeral mb-4 text-3xl uppercase">{provider}</h1>
 
-  {#if error}
-    <div class="panel border-destructive/50 p-4 text-sm text-destructive">{error}</div>
-  {:else if !data}
-    <div class="panel h-48 animate-pulse"></div>
-  {:else if rows.length === 0}
-    <div class="panel p-8 text-center text-sm text-muted-foreground">
-      No data for this period.
-    </div>
-  {:else}
-    <div class="panel p-4">
-      <div class="panel-title mb-3">Daily cost</div>
-      <div class="flex h-32 items-end gap-[2px]">
-        {#each data.daily as d}
-          <div
-            class="flex-1 rounded-t-sm bg-primary/80 transition-colors hover:bg-primary"
-            style="height: {((d.cost_usd ?? 0) / maxDailyCost) * 112 + 2}px"
-            title={`${d.date} · ${fmtUsd(d.cost_usd)} · ${fmtTokens(d.input_tokens + d.output_tokens)} tokens`}
-          ></div>
-        {/each}
-      </div>
+{#if error}
+  <div class="bento grid-cols-1"><div class="cell text-sm" style="color: var(--red)">{error}</div></div>
+{:else if !data}
+  <div class="bento grid-cols-1"><div class="cell h-48 animate-pulse"></div></div>
+{:else if rows.length === 0}
+  <div class="bento grid-cols-1"><div class="cell py-12 text-center"><span class="microlabel-dim">no data in period</span></div></div>
+{:else}
+  <div class="bento grid-cols-1">
+    <div class="cell">
+      <div class="microlabel mb-3">Daily cost</div>
+      <BarStrip {bars} height={110} />
     </div>
 
-    <div class="panel overflow-hidden">
+    <div class="cell !p-0">
       <table class="w-full text-sm">
         <thead>
-          <tr class="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
-            <th class="px-4 py-2.5">Model</th>
-            <th class="px-2 py-2.5">Source</th>
-            <th class="cursor-pointer px-2 py-2.5 text-right" onclick={() => (sortBy = 'input_tokens')}>Input</th>
-            <th class="cursor-pointer px-2 py-2.5 text-right" onclick={() => (sortBy = 'output_tokens')}>Output</th>
-            <th class="px-2 py-2.5 text-right">Cached</th>
-            <th class="cursor-pointer px-2 py-2.5 text-right" onclick={() => (sortBy = 'requests')}>Reqs</th>
-            <th class="cursor-pointer px-4 py-2.5 text-right" onclick={() => (sortBy = 'cost_usd')}>Cost</th>
+          <tr class="hairline-b">
+            <th class="microlabel-dim px-5 py-3 text-left">MODEL</th>
+            <th class="microlabel-dim px-2 py-3 text-left">SOURCE</th>
+            {#each COLS as c (c.key)}
+              <th class="px-3 py-3 text-right">
+                <button
+                  class="microlabel-dim hover:text-paper"
+                  style={sortBy === c.key ? 'color: var(--red);' : ''}
+                  onclick={() => (sortBy = c.key)}
+                >{c.label}{sortBy === c.key ? ' ▾' : ''}</button>
+              </th>
+            {/each}
           </tr>
         </thead>
-        <tbody class="divide-y divide-border">
-          {#each rows as r}
-            <tr class="hover:bg-surface-2">
-              <td class="px-4 py-2.5 font-medium">{r.model}</td>
-              <td class="px-2 py-2.5">
-                <span class="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                  {r.source}
-                </span>
-              </td>
-              <td class="mono px-2 py-2.5 text-right">{fmtTokens(r.input_tokens)}</td>
-              <td class="mono px-2 py-2.5 text-right">{fmtTokens(r.output_tokens)}</td>
-              <td class="mono px-2 py-2.5 text-right">{fmtTokens(r.cache_read_tokens)}</td>
-              <td class="mono px-2 py-2.5 text-right">{fmtTokens(r.requests)}</td>
-              <td class="mono px-4 py-2.5 text-right font-semibold">
-                {fmtUsd(r.cost_usd, !!r.cost_estimated)}
-              </td>
+        <tbody>
+          {#each rows as r (r.model + r.source)}
+            <tr class="hairline-b transition-colors last:border-b-0 hover:bg-ink-2">
+              <td class="px-5 py-3 font-bold">{r.model}</td>
+              <td class="microlabel-dim px-2 py-3">{r.source}</td>
+              <td class="numeral px-3 py-3 text-right">{fmtTokens(r.input_tokens)}</td>
+              <td class="numeral px-3 py-3 text-right">{fmtTokens(r.output_tokens)}</td>
+              <td class="numeral px-3 py-3 text-right">{fmtTokens(r.requests)}</td>
+              <td class="numeral px-3 py-3 text-right font-bold">{fmtUsd(r.cost_usd, !!r.cost_estimated)}</td>
             </tr>
           {/each}
         </tbody>
@@ -98,14 +92,13 @@
     </div>
 
     {#if data.billed_costs.length > 0}
-      <div class="panel p-4">
-        <div class="panel-title mb-2">Provider-billed cost (ground truth)</div>
-        <div class="mono text-lg font-bold">{fmtUsd(billedTotal)}</div>
-        <p class="mt-1 text-xs text-muted-foreground">
-          From {data.billed_costs[0].source.replace('_', ' ')} · {data.billed_costs.length} daily records.
-          Token-level rows above may lag or be estimates; this number is what the provider billed.
+      <div class="cell">
+        <div class="microlabel">Provider-billed (ground truth)</div>
+        <div class="numeral mt-2 text-2xl">{fmtUsd(billedTotal)}</div>
+        <p class="microlabel-dim mt-1">
+          {data.billed_costs.length} daily records via {data.billed_costs[0].source.replace('_', ' ')}
         </p>
       </div>
     {/if}
-  {/if}
-</div>
+  </div>
+{/if}

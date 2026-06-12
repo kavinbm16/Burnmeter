@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from typing import Callable
 from datetime import datetime, timezone
 
 import httpx
@@ -84,7 +85,9 @@ def _last_usage_from_json(buffer: bytes) -> dict | None:
     return None
 
 
-async def _record(store: Store, model: str, usage: dict) -> None:
+async def _record(
+    store: Store, model: str, usage: dict, on_capture: Callable | None = None
+) -> None:
     prompt = int(usage.get("promptTokenCount", 0))
     candidates = int(usage.get("candidatesTokenCount", 0))
     thoughts = int(usage.get("thoughtsTokenCount", 0))
@@ -105,9 +108,26 @@ async def _record(store: Store, model: str, usage: dict) -> None:
             cost_estimated=True,
         )
     )
+    if on_capture is not None:
+        try:
+            await on_capture(
+                {
+                    "provider": "gemini",
+                    "model": model,
+                    "input_tokens": prompt,
+                    "output_tokens": output,
+                    "cache_read_tokens": cached,
+                    "cost_usd": cost,
+                    "ts": datetime.now(tz=timezone.utc).isoformat(),
+                }
+            )
+        except Exception:
+            logger.exception("live capture callback failed")
 
 
-def build_router(store: Store, keystore: KeyStore) -> APIRouter:
+def build_router(
+    store: Store, keystore: KeyStore, on_capture: Callable | None = None
+) -> APIRouter:
     router = APIRouter()
 
     @router.api_route(
@@ -153,7 +173,7 @@ def build_router(store: Store, keystore: KeyStore) -> APIRouter:
                         usage = _last_usage_from_sse(bytes(buffer)) or _last_usage_from_json(bytes(buffer))
                         if usage:
                             try:
-                                await _record(store, model, usage)
+                                await _record(store, model, usage, on_capture)
                             except Exception:
                                 logger.exception("failed to record proxy usage")
 
@@ -168,7 +188,7 @@ def build_router(store: Store, keystore: KeyStore) -> APIRouter:
             usage = _last_usage_from_json(content)
             if usage:
                 try:
-                    await _record(store, model, usage)
+                    await _record(store, model, usage, on_capture)
                 except Exception:
                     logger.exception("failed to record proxy usage")
         return Response(content=content, status_code=resp.status_code, headers=resp_headers)
