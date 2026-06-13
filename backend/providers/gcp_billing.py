@@ -44,7 +44,10 @@ _BILLING_QUERY = """
 def _make_client(credentials_json: str):
     if bigquery is None or service_account is None:
         raise ImportError("google-cloud-bigquery not installed")
-    info = json.loads(credentials_json)
+    try:
+        info = json.loads(credentials_json)
+    except json.JSONDecodeError as e:
+        raise ProviderError("invalid credentials JSON") from e
     creds = service_account.Credentials.from_service_account_info(info)
     return bigquery.Client(credentials=creds, project=info.get("project_id")), info.get("project_id", "")
 
