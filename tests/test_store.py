@@ -62,3 +62,66 @@ async def test_remove_provider_purges(store):
     assert await store.list_providers() == []
     data = await store.overview("2026-06-01", "2026-06-30")
     assert data["by_provider"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_sync_state_returns_none_when_missing(store):
+    result = await store.get_sync_state("nonexistent")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_sync_state_returns_dict_after_set(store):
+    await store.set_sync_state("__gcp_billing__", "ok", watermark="2026-06-12")
+    result = await store.get_sync_state("__gcp_billing__")
+    assert result is not None
+    assert result["status"] == "ok"
+    assert result["watermark_date"] == "2026-06-12"
+
+
+@pytest.mark.asyncio
+async def test_ensure_provider_inserts_if_absent(store):
+    await store.ensure_provider("vertex_ai", "Google Vertex AI", "via GCP billing", "billing export")
+    rows = await store.list_providers()
+    assert any(r["name"] == "vertex_ai" for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_ensure_provider_does_not_overwrite_existing(store):
+    await store.add_provider("vertex_ai", "Google Vertex AI", "via GCP billing", "billing export")
+    # Calling ensure again should not raise or change anything
+    await store.ensure_provider("vertex_ai", "CHANGED", "x", "y")
+    rows = await store.list_providers()
+    row = next(r for r in rows if r["name"] == "vertex_ai")
+    assert row["display_name"] == "Google Vertex AI"
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_summary_empty(store):
+    result = await store.reconciliation_summary("gemini", "2026-06-01", "2026-06-30")
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_summary_with_proxy_and_billing(store):
+    from backend.providers.base import CostRecord, UsageRecord
+
+    # Proxy estimate
+    await store.upsert_usage([UsageRecord(
+        provider="gemini", model="gemini-2.0-flash", date="2026-06-10",
+        source="proxy", cost_usd=1.00, cost_estimated=True
+    )])
+    # Billing actual
+    await store.upsert_costs([CostRecord(
+        provider="gemini", date="2026-06-10", cost_usd=1.05,
+        line_item="Flash Input Tokens", source="billing_export"
+    )])
+
+    result = await store.reconciliation_summary("gemini", "2026-06-01", "2026-06-30")
+    assert len(result) == 1
+    row = result[0]
+    assert row["date"] == "2026-06-10"
+    assert row["estimated_cost"] == pytest.approx(1.00)
+    assert row["actual_cost"] == pytest.approx(1.05)
+    assert row["reconciled"] is True
+    assert row["delta_pct"] == pytest.approx(5.0)

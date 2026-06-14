@@ -253,6 +253,69 @@ class Store:
             )
             await db.commit()
 
+    async def get_sync_state(self, provider: str) -> dict[str, Any] | None:
+        async with self._conn() as db:
+            cur = await db.execute(
+                "SELECT * FROM sync_state WHERE provider=?", (provider,)
+            )
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+    async def ensure_provider(
+        self, name: str, display_name: str, masked_key: str, label: str
+    ) -> None:
+        """Insert provider only if it doesn't already exist. Safe to call repeatedly."""
+        async with self._conn() as db:
+            await db.execute(
+                """INSERT INTO providers(name, display_name, masked_key, label)
+                   VALUES(?,?,?,?)
+                   ON CONFLICT(name) DO NOTHING""",
+                (name, display_name, masked_key, label),
+            )
+            await db.commit()
+
+    async def reconciliation_summary(
+        self, provider: str, start: str, end: str
+    ) -> list[dict[str, Any]]:
+        """Per-day estimated vs actual cost for a provider. Used for reconciliation UI."""
+        async with self._conn() as db:
+            cur = await db.execute(
+                """SELECT date, SUM(cost_usd) AS estimated_cost
+                   FROM usage_records
+                   WHERE provider=? AND date BETWEEN ? AND ? AND source='proxy'
+                   GROUP BY date""",
+                (provider, start, end),
+            )
+            estimated = {r["date"]: r["estimated_cost"] or 0.0 for r in await cur.fetchall()}
+
+            cur = await db.execute(
+                """SELECT date, SUM(cost_usd) AS actual_cost
+                   FROM cost_records
+                   WHERE provider=? AND date BETWEEN ? AND ? AND source='billing_export'
+                   GROUP BY date""",
+                (provider, start, end),
+            )
+            actual = {r["date"]: r["actual_cost"] or 0.0 for r in await cur.fetchall()}
+
+        all_dates = sorted(set(list(estimated.keys()) + list(actual.keys())))
+        result = []
+        for d in all_dates:
+            est = estimated.get(d, 0.0)
+            act = actual.get(d)
+            delta_pct: float | None = None
+            if act is not None and est > 0:
+                delta_pct = round((act - est) / est * 100, 2)
+            result.append(
+                {
+                    "date": d,
+                    "estimated_cost": est,
+                    "actual_cost": act,
+                    "delta_pct": delta_pct,
+                    "reconciled": act is not None,
+                }
+            )
+        return result
+
     # -- budget ------------------------------------------------------------------
 
     async def get_budget(self) -> float | None:
