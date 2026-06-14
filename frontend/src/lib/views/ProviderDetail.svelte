@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, fmtTokens, fmtUsd } from '$lib/api'
-  import type { Breakdown, KeyRow } from '$lib/api'
+  import type { Breakdown, KeyRow, ReconciliationRow } from '$lib/api'
   import BarStrip from '$lib/components/BarStrip.svelte'
 
   let {
@@ -21,6 +21,12 @@
       ([d, k]) => { data = d; keys = k.keys; error = null },
       (e) => (error = String(e))
     )
+    if (provider === 'gemini') {
+      api.reconciliation(provider, period).then(
+        (res) => (reconciliation = res.reconciliation),
+        () => (reconciliation = [])
+      )
+    }
   })
 
   const hasAudio = $derived(
@@ -38,6 +44,7 @@
     }))
   )
   const billedTotal = $derived((data?.billed_costs ?? []).reduce((a, b) => a + b.cost_usd, 0))
+  let reconciliation = $state<ReconciliationRow[]>([])
 
   const COLS: { key: typeof sortBy; label: string }[] = [
     { key: 'input_tokens', label: 'INPUT' },
@@ -47,7 +54,7 @@
   ]
 </script>
 
-<button class="microlabel-dim mb-4 hover:text-paper" onclick={onback}>← DASHBOARD</button>
+<button class="focus-ring microlabel-dim mb-4 hover:text-paper" onclick={onback}>← DASHBOARD</button>
 
 <h1 class="numeral mb-4 text-3xl uppercase">{provider}</h1>
 
@@ -71,13 +78,13 @@
             <th class="microlabel-dim px-5 py-3 text-left">MODEL</th>
             <th class="microlabel-dim px-2 py-3 text-left">SOURCE</th>
             {#if hasAudio}
-              <th class="microlabel-dim px-3 py-3 text-right">AUD IN</th>
-              <th class="microlabel-dim px-3 py-3 text-right">AUD OUT</th>
+              <th class="microlabel-dim px-3 py-3 text-right">Audio In</th>
+              <th class="microlabel-dim px-3 py-3 text-right">Audio Out</th>
             {/if}
             {#each COLS as c (c.key)}
               <th class="px-3 py-3 text-right">
                 <button
-                  class="microlabel-dim hover:text-paper"
+                  class="focus-ring microlabel-dim hover:text-paper"
                   style={sortBy === c.key ? 'color: var(--red);' : ''}
                   onclick={() => (sortBy = c.key)}
                 >{c.label}{sortBy === c.key ? ' ▾' : ''}</button>
@@ -112,7 +119,7 @@
       <div class="cell !p-0">
         <div class="flex items-baseline justify-between px-5 pt-4">
           <span class="microlabel">By API key</span>
-          <span class="microlabel-dim">proxy-captured traffic · masked hints only</span>
+          <span class="microlabel-dim">traffic via local proxy · masked hints only</span>
         </div>
         <table class="mt-2 w-full text-sm">
           <thead>
@@ -121,8 +128,8 @@
               <th class="microlabel-dim px-3 py-2.5 text-right">MODELS</th>
               <th class="microlabel-dim px-3 py-2.5 text-right">INPUT</th>
               <th class="microlabel-dim px-3 py-2.5 text-right">OUTPUT</th>
-              <th class="microlabel-dim px-3 py-2.5 text-right">AUD IN</th>
-              <th class="microlabel-dim px-3 py-2.5 text-right">AUD OUT</th>
+              <th class="microlabel-dim px-3 py-2.5 text-right">Audio In</th>
+              <th class="microlabel-dim px-3 py-2.5 text-right">Audio Out</th>
               <th class="microlabel-dim px-3 py-2.5 text-right">REQS</th>
               <th class="microlabel-dim px-5 py-2.5 text-right">COST</th>
             </tr>
@@ -167,6 +174,35 @@
             </div>
           {/each}
         </div>
+      </div>
+    {/if}
+
+    {#if reconciliation.some(r => r.reconciled)}
+      {@const reconciled = reconciliation.filter(r => r.reconciled)}
+      {@const totalActual = reconciled.reduce((s, r) => s + (r.actual_cost ?? 0), 0)}
+      {@const totalEstimated = reconciled.reduce((s, r) => s + r.estimated_cost, 0)}
+      {@const deltaPct = totalEstimated > 0
+        ? ((totalActual - totalEstimated) / totalEstimated * 100).toFixed(1)
+        : null}
+      <div class="cell">
+        <div class="microlabel mb-2">Billing reconciliation</div>
+        <div class="grid grid-cols-3 gap-4 text-sm">
+          <div>
+            <p class="microlabel-dim">Proxy estimate</p>
+            <p class="numeral">${totalEstimated.toFixed(4)}</p>
+          </div>
+          <div>
+            <p class="microlabel-dim">GCP actual</p>
+            <p class="numeral">${totalActual.toFixed(4)}</p>
+          </div>
+          <div>
+            <p class="microlabel-dim">Delta</p>
+            <p class="numeral" style="color: {deltaPct && parseFloat(deltaPct) > 0 ? 'var(--red)' : 'inherit'}">
+              {deltaPct != null ? `${parseFloat(deltaPct) > 0 ? '+' : ''}${deltaPct}%` : '—'}
+            </p>
+          </div>
+        </div>
+        <p class="microlabel-dim mt-2">{reconciled.length} days reconciled against GCP billing export</p>
       </div>
     {/if}
   </div>
