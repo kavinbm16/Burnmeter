@@ -1,11 +1,12 @@
 <script lang="ts">
   import { api, fmtTokens, fmtUsd } from '$lib/api'
-  import type { Budget, HeatmapDay, LeaderboardModel, Overview } from '$lib/api'
+  import type { Budget, HeatmapDay, LeaderboardModel, Overview, ReconciliationRow } from '$lib/api'
   import Odometer from '$lib/components/Odometer.svelte'
   import Heatmap from '$lib/components/Heatmap.svelte'
   import BurnGauge from '$lib/components/BurnGauge.svelte'
   import Leaderboard from '$lib/components/Leaderboard.svelte'
   import BarStrip from '$lib/components/BarStrip.svelte'
+  import LiveTicker from '$lib/components/LiveTicker.svelte'
 
   let {
     period,
@@ -19,6 +20,7 @@
   let models = $state<LeaderboardModel[]>([])
   let error = $state<string | null>(null)
   let dayFilter = $state<string | null>(null)
+  let secondaryView: 'calendar' | 'leaderboard' = $state('calendar')
 
   $effect(() => {
     void refreshTick
@@ -37,6 +39,10 @@
         error = null
       },
       (e) => (error = String(e))
+    )
+    api.reconciliation('gemini', period).then(
+      (res) => (reconciliation = res.reconciliation),
+      () => (reconciliation = [])
     )
   })
 
@@ -60,6 +66,7 @@
   })
 
   const anyEstimated = $derived(data?.by_provider.some((p) => p.cost_estimated) ?? false)
+  let reconciliation = $state<ReconciliationRow[]>([])
 </script>
 
 {#if error}
@@ -89,54 +96,41 @@
     </button>
   {/if}
 
-  <!-- ── Section 1: KPI stats ── -->
-  <div class="bento grid-cols-2 md:grid-cols-4">
-    <!-- hero: total spend + daily bar -->
-    <div class="cell col-span-2 row-span-2 md:col-span-2">
+  <!-- PRIMARY: hero + budget -->
+  <div class="flex flex-wrap items-start gap-6">
+    <div class="flex-1">
       <div class="microlabel">Total spend</div>
       <div class="mt-4 flex items-baseline text-7xl lg:text-8xl">
         <Odometer value={(data.totals.cost_usd ?? 0).toFixed(2)} />
       </div>
+      {@const reconciledDays = reconciliation.filter(r => r.reconciled).length}
+      {@const totalDays = reconciliation.length}
+      {#if totalDays > 0}
+        <p class="microlabel-dim mt-1">
+          {reconciledDays === totalDays
+            ? 'reconciled against GCP billing'
+            : reconciledDays > 0
+              ? `${reconciledDays}/${totalDays} days reconciled`
+              : 'estimated · connect GCP for actuals'}
+        </p>
+      {/if}
       <div class="microlabel-dim mt-2">
         {anyEstimated ? '≈ ' : ''}USD — {data.period.start} → {data.period.end}
       </div>
-      <div class="mt-8">
-        <BarStrip bars={dailyBars} height={150} highlight={dayFilter} />
-      </div>
     </div>
-
-    <!-- satellite: input -->
-    <div class="cell">
-      <div class="microlabel">Input</div>
-      <div class="numeral mt-3 text-4xl"><Odometer value={fmtTokens(data.totals.input_tokens)} /></div>
-      <div class="microlabel-dim mt-2">tokens</div>
-    </div>
-
-    <!-- satellite: output -->
-    <div class="cell">
-      <div class="microlabel">Output</div>
-      <div class="numeral mt-3 text-4xl"><Odometer value={fmtTokens(data.totals.output_tokens)} /></div>
-      <div class="microlabel-dim mt-2">tokens</div>
-    </div>
-
-    <!-- satellite: requests -->
-    <div class="cell">
-      <div class="microlabel">Requests</div>
-      <div class="numeral mt-3 text-4xl"><Odometer value={fmtTokens(data.totals.requests)} /></div>
-      <div class="microlabel-dim mt-2">calls</div>
-    </div>
-
-    <!-- burn gauge -->
-    <div class="cell">
-      <BurnGauge budget={budget} onsave={saveBudget} />
-    </div>
+    <BurnGauge budget={budget} onsave={saveBudget} loading={!data} />
   </div>
 
-  <!-- ── Section 2: Providers + Heatmap ── -->
-  <div class="bento mt-px grid-cols-2 md:grid-cols-4">
+  <!-- PRIMARY: daily bar chart -->
+  <div class="mt-6">
+    <BarStrip bars={dailyBars} height={150} highlight={dayFilter} />
+  </div>
+
+  <!-- PRIMARY: provider list -->
+  <div class="bento mt-6 grid-cols-2 md:grid-cols-4">
     {#each data.by_provider as p (p.provider)}
       <div
-        class="cell group cursor-pointer transition-colors hover:bg-ink-2"
+        class="focus-ring cell group cursor-pointer transition-colors hover:bg-ink-2"
         role="button"
         tabindex="0"
         onclick={() => ondrill(p.provider)}
@@ -144,7 +138,7 @@
       >
         <div class="flex items-baseline justify-between">
           <span class="microlabel">{p.provider}</span>
-          <span class="microlabel-dim opacity-0 transition-opacity group-hover:opacity-100">open →</span>
+          <span class="microlabel-dim" aria-hidden="true">›</span>
         </div>
         <div class="numeral mt-3 text-3xl">{fmtUsd(p.cost_usd, !!p.cost_estimated)}</div>
         <div class="microlabel-dim mt-2">
@@ -152,32 +146,50 @@
         </div>
       </div>
     {/each}
-
-    <!-- heatmap — always full width -->
-    <div class="cell col-span-2 md:col-span-4">
-      <div class="microlabel mb-4">Spend calendar</div>
-      <Heatmap
-        days={heat.days}
-        start={heat.start}
-        end={heat.end}
-        selected={dayFilter}
-        onselect={(d) => (dayFilter = d)}
-      />
-    </div>
   </div>
 
-  <!-- ── Section 3: Model leaderboard ── -->
-  <div class="bento mt-px grid-cols-1">
-    <div class="cell">
-      <div class="flex items-baseline justify-between">
-        <span class="microlabel">Model leaderboard</span>
-        <span class="microlabel-dim">spend · tokens · $/1M · in:out</span>
-      </div>
-      <div class="mt-4">
-        <Leaderboard {models} />
+  <!-- SECONDARY: tab toggle -->
+  <div class="mt-6 flex gap-4 border-t border-hairline pt-4">
+    <button
+      class="microlabel-dim transition-colors focus-ring"
+      class:text-paper={secondaryView === 'calendar'}
+      onclick={() => (secondaryView = 'calendar')}
+    >Calendar</button>
+    <button
+      class="microlabel-dim transition-colors focus-ring"
+      class:text-paper={secondaryView === 'leaderboard'}
+      onclick={() => (secondaryView = 'leaderboard')}
+    >Leaderboard</button>
+  </div>
+
+  {#if secondaryView === 'calendar'}
+    <div class="bento mt-px grid-cols-1">
+      <div class="cell">
+        <div class="microlabel mb-4">Spend calendar</div>
+        <Heatmap
+          days={heat.days}
+          start={heat.start}
+          end={heat.end}
+          selected={dayFilter}
+          onselect={(d) => (dayFilter = d)}
+          loading={!data}
+        />
       </div>
     </div>
-  </div>
+    <LiveTicker />
+  {:else}
+    <div class="bento mt-px grid-cols-1">
+      <div class="cell">
+        <div class="flex items-baseline justify-between">
+          <span class="microlabel">Model leaderboard</span>
+          <span class="microlabel-dim">spend · tokens · $/1M · in:out</span>
+        </div>
+        <div class="mt-4">
+          <Leaderboard {models} />
+        </div>
+      </div>
+    </div>
+  {/if}
 
   {#if anyEstimated}
     <p class="microlabel-dim mt-4">≈ — estimated from local price table (proxy traffic). billed figures may differ.</p>
