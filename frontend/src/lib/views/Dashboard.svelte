@@ -67,6 +67,9 @@
 
   const anyEstimated = $derived(data?.by_provider.some((p) => p.cost_estimated) ?? false)
   let reconciliation = $state<ReconciliationRow[]>([])
+  const reconciledDays = $derived(reconciliation.filter(r => r.reconciled).length)
+  const totalDays = $derived(reconciliation.length)
+  const reconciledDatesSet = $derived(new Set(reconciliation.filter(r => r.reconciled).map(r => r.date)))
 </script>
 
 {#if error}
@@ -103,8 +106,6 @@
       <div class="mt-4 flex items-baseline text-7xl lg:text-8xl">
         <Odometer value={(data.totals.cost_usd ?? 0).toFixed(2)} />
       </div>
-      {@const reconciledDays = reconciliation.filter(r => r.reconciled).length}
-      {@const totalDays = reconciliation.length}
       {#if totalDays > 0}
         <p class="microlabel-dim mt-1">
           {reconciledDays === totalDays
@@ -173,6 +174,7 @@
           selected={dayFilter}
           onselect={(d) => (dayFilter = d)}
           loading={!data}
+          reconciledDates={reconciledDatesSet}
         />
       </div>
     </div>
