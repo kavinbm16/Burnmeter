@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-billing = ["google-cloud-bigquery>=3.25"]
+billing = ["google-cloud-bigquery>=3.25", "google-auth>=2.30"]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "respx>=0.21"]
 
 [tool.pytest.ini_options]
