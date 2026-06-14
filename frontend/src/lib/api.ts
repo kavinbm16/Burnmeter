@@ -105,6 +105,23 @@ export interface LeaderboardModel {
   cost_estimated: number
 }
 
+export interface GCPStatus {
+  configured: boolean
+  project_id: string | null
+  billing_table: string | null
+  logs_table: string | null
+  billing_sync: { status: string; last_synced_at: string | null; error: string | null } | null
+  logs_sync: { status: string; last_synced_at: string | null; error: string | null } | null
+}
+
+export interface ReconciliationRow {
+  date: string
+  estimated_cost: number
+  actual_cost: number | null
+  delta_pct: number | null
+  reconciled: boolean
+}
+
 async function get<T>(url: string): Promise<T> {
   const res = await fetch(url)
   if (!res.ok) throw new Error(`${url} → ${res.status}`)
@@ -164,6 +181,55 @@ export const api = {
   removeProvider: (name: string) => fetch(`/api/providers/${name}`, { method: 'DELETE' }),
   sync: (provider?: string) =>
     fetch(`/api/sync${provider ? `?provider=${provider}` : ''}`, { method: 'POST' }),
+  gcpAuthCheck: async (): Promise<{ adc: boolean; project_id: string | null }> => {
+    const r = await fetch('/api/gcp/auth-check')
+    return r.json()
+  },
+  gcpStatus: async (): Promise<GCPStatus> => {
+    const r = await fetch('/api/gcp/status')
+    return r.json()
+  },
+  gcpTables: async (credentialsJson: string): Promise<{ tables: string[] }> => {
+    const r = await fetch('/api/gcp/tables', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credentials_json: credentialsJson }),
+    })
+    if (!r.ok) throw new Error((await r.json()).detail ?? 'validation failed')
+    return r.json()
+  },
+  gcpConnect: async (
+    credentialsJson: string,
+    billingTable: string,
+    logsTable?: string
+  ): Promise<{ ok: boolean; project_id: string }> => {
+    const r = await fetch('/api/gcp/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        credentials_json: credentialsJson,
+        billing_table: billingTable,
+        logs_table: logsTable ?? null,
+      }),
+    })
+    if (!r.ok) throw new Error((await r.json()).detail ?? 'connect failed')
+    return r.json()
+  },
+  gcpDisconnect: async (): Promise<{ ok: boolean }> => {
+    const r = await fetch('/api/gcp/disconnect', { method: 'DELETE' })
+    return r.json()
+  },
+  gcpSync: async (): Promise<{ ok: boolean }> => {
+    const r = await fetch('/api/gcp/sync', { method: 'POST' })
+    return r.json()
+  },
+  reconciliation: async (
+    provider: string,
+    period = '30d'
+  ): Promise<{ reconciliation: ReconciliationRow[]; period: { start: string; end: string } }> => {
+    const r = await fetch(`/api/providers/${provider}/reconciliation?period=${period}`)
+    return r.json()
+  },
 }
 
 export function fmtUsd(v: number | null | undefined, estimated = false): string {
