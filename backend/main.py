@@ -254,42 +254,135 @@ async def keys_breakdown(name: str, period: str = "30d", date: str | None = None
     }
 
 
-class BillingConfig(BaseModel):
+class GCPConnectRequest(BaseModel):
     credentials_json: str
-    table: str  # fully-qualified billing export table
+    billing_table: str
+    logs_table: str | None = None
 
+
+class GCPTablesRequest(BaseModel):
+    credentials_json: str
+
+
+@app.get("/api/gcp/auth-check")
+async def gcp_auth_check():
+    """Detect if Application Default Credentials are available with billing scope."""
+    try:
+        import google.auth  # noqa: PLC0415
+
+        _, project = google.auth.default(
+            scopes=[
+                "https://www.googleapis.com/auth/cloud-billing.readonly",
+                "https://www.googleapis.com/auth/bigquery.readonly",
+            ]
+        )
+        return {"adc": True, "project_id": project}
+    except Exception:
+        return {"adc": False, "project_id": None}
+
+
+@app.get("/api/gcp/status")
+async def gcp_status():
+    creds = keystore.get_key("gcp_credentials_json")
+    return {
+        "configured": creds is not None,
+        "project_id": keystore.get_key("gcp_project_id"),
+        "billing_table": keystore.get_key("gcp_billing_table"),
+        "logs_table": keystore.get_key("gcp_logs_table"),
+        "billing_sync": await store.get_sync_state("__gcp_billing__"),
+        "logs_sync": await store.get_sync_state("__gcp_logs__"),
+    }
+
+
+@app.post("/api/gcp/tables")
+async def gcp_tables(req: GCPTablesRequest):
+    """Validate credentials and return list of billing export tables."""
+    from backend.providers.gcp_billing import discover_tables, validate_credentials  # noqa: PLC0415
+
+    try:
+        validate_credentials(req.credentials_json)
+        tables = await discover_tables(req.credentials_json)
+        return {"tables": tables}
+    except ProviderError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/gcp/connect")
+async def gcp_connect(req: GCPConnectRequest):
+    """Store GCP credentials, start billing + logs sync loops, trigger immediate sync."""
+    from backend.providers.gcp_billing import validate_credentials  # noqa: PLC0415
+
+    try:
+        project_id = validate_credentials(req.credentials_json)
+    except ProviderError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    keystore.set_key("gcp_credentials_json", req.credentials_json)
+    keystore.set_key("gcp_billing_table", req.billing_table)
+    keystore.set_key("gcp_project_id", project_id)
+    if req.logs_table:
+        keystore.set_key("gcp_logs_table", req.logs_table)
+
+    sync_engine.restart_gcp_loops()
+
+    import asyncio as _asyncio  # noqa: PLC0415
+
+    _asyncio.create_task(sync_engine.sync_gcp_billing())
+
+    return {"ok": True, "project_id": project_id}
+
+
+@app.delete("/api/gcp/disconnect")
+async def gcp_disconnect():
+    for key in ["gcp_credentials_json", "gcp_billing_table", "gcp_logs_table", "gcp_project_id"]:
+        keystore.delete_key(key)
+    await sync_engine.stop_gcp_loops()
+    return {"ok": True}
+
+
+@app.post("/api/gcp/sync")
+async def gcp_sync():
+    import asyncio as _asyncio  # noqa: PLC0415
+
+    _asyncio.create_task(sync_engine.sync_gcp_billing())
+    if keystore.get_key("gcp_logs_table"):
+        _asyncio.create_task(sync_engine.sync_gcp_logs())
+    return {"ok": True}
+
+
+@app.get("/api/providers/{name}/reconciliation")
+async def reconciliation(name: str, period: str = "30d"):
+    start, end = _period_range(period)
+    data = await store.reconciliation_summary(name, start, end)
+    return {"reconciliation": data, "period": {"start": start, "end": end}}
+
+
+# Backward-compat: kept so existing configured setups don't break.
+# Redirects to unified /api/gcp/* endpoints.
 
 @app.get("/api/billing/gemini")
 async def billing_status():
+    status = await gcp_status()
     return {
-        "configured": keystore.get_key("gemini_billing_creds") is not None,
-        "table": keystore.get_key("gemini_billing_table"),
+        "configured": status["configured"],
+        "table": status["billing_table"],
     }
+
+
+class BillingConfig(BaseModel):
+    credentials_json: str
+    table: str
 
 
 @app.post("/api/billing/gemini")
 async def billing_configure(cfg: BillingConfig):
-    import json as _json
-
-    try:
-        info = _json.loads(cfg.credentials_json)
-        if info.get("type") != "service_account":
-            raise ValueError
-    except (ValueError, AttributeError):
-        raise HTTPException(status_code=400, detail="not a service-account JSON")
-    keystore.set_key("gemini_billing_creds", cfg.credentials_json)
-    keystore.set_key("gemini_billing_table", cfg.table)
-    import asyncio as _asyncio
-
-    _asyncio.create_task(sync_engine.sync_gemini_billing())
-    return {"ok": True}
+    req = GCPConnectRequest(credentials_json=cfg.credentials_json, billing_table=cfg.table)
+    return await gcp_connect(req)
 
 
 @app.delete("/api/billing/gemini")
 async def billing_remove():
-    keystore.delete_key("gemini_billing_creds")
-    keystore.delete_key("gemini_billing_table")
-    return {"ok": True}
+    return await gcp_disconnect()
 
 
 @app.websocket("/ws/live")
