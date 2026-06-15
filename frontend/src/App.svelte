@@ -48,8 +48,9 @@
 
 <div class="mx-auto min-h-screen max-w-7xl px-6">
   <!-- masthead -->
-  <header class="hairline-b sticky top-0 z-10 backdrop-blur" style="background: color-mix(in oklch, var(--ink) 88%, transparent);">
-    <div class="flex items-center gap-8 py-4">
+  <header class="sticky top-0 z-10 backdrop-blur" style="background: color-mix(in oklch, var(--ink) 88%, transparent);">
+    <!-- Row 1: brand + global sync -->
+    <div class="flex items-center justify-between px-0 py-3 border-b border-hairline">
       <button
         class="focus-ring text-lg font-bold"
         style="letter-spacing: 0.25em;"
@@ -57,19 +58,26 @@
       >
         BURNMETER<span style="color: var(--red)">®</span>
       </button>
+      <button
+        class="focus-ring microlabel border border-hairline px-3 py-1.5 transition-colors hover:border-red disabled:opacity-40"
+        onclick={syncNow}
+        disabled={syncing}
+      >{syncing ? 'SYNCING…' : 'SYNC'}</button>
+    </div>
 
-      <nav class="flex gap-6">
+    <!-- Row 2: tabs + view-specific actions -->
+    <div class="flex items-center border-b border-hairline">
+      <nav class="flex">
         {#each NAV as n (n.id)}
           <button
-            class="focus-ring microlabel-dim pb-0.5 transition-colors"
+            class="focus-ring microlabel-dim px-5 py-2.5 transition-colors hover:text-paper"
             style={tab === n.id ? 'color: var(--paper); border-bottom: 1px solid var(--red);' : ''}
             onclick={() => { tab = n.id; detailProvider = null }}
           >{n.label}</button>
         {/each}
       </nav>
-
-      <div class="ml-auto flex items-center gap-4">
-        {#if tab === 'dashboard'}
+      {#if tab === 'dashboard'}
+        <div class="ml-auto flex items-center gap-4">
           <select
             bind:value={period}
             class="microlabel-dim cursor-pointer border border-hairline bg-ink px-2 py-1.5 focus:border-red focus:outline-none"
@@ -79,16 +87,12 @@
             <option value="90d">90D</option>
           </select>
           <button class="focus-ring microlabel-dim hover:text-paper" onclick={exportPoster}>EXPORT POSTER</button>
-        {/if}
-        <button
-          class="focus-ring microlabel border border-hairline px-3 py-1.5 transition-colors hover:border-red disabled:opacity-40"
-          onclick={syncNow}
-          disabled={syncing}
-        >{syncing ? 'SYNCING…' : 'SYNC'}</button>
-      </div>
+        </div>
+      {/if}
     </div>
-    <div class="hairline-b -mx-6"></div>
-    <div class="flex items-center py-2">
+
+    <!-- Row 3: live ticker (unchanged) -->
+    <div class="flex items-center py-2 border-b border-hairline">
       <LiveTicker onevent={onLiveEvent} />
     </div>
   </header>
