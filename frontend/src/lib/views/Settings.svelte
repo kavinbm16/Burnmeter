@@ -2,16 +2,21 @@
   import { api } from '$lib/api'
   import type { GCPStatus, ProvidersResponse } from '$lib/api'
 
+  // ── Tab + selection state ────────────────────────────────────────────
+  let activeTab = $state<'providers' | 'billing'>('providers')
+  let selectedProvider = $state<string | null>(null)
+  let geminiProxyOpen = $state(false)
+
+  // ── Provider state ───────────────────────────────────────────────────
   let data = $state<ProvidersResponse | null>(null)
   let keyInput = $state<Record<string, string>>({})
   let busy = $state<string | null>(null)
   let errors = $state<Record<string, string>>({})
-  let copied = $state(false)
 
-  // GCP connection state
+  // ── GCP state ────────────────────────────────────────────────────────
   let gcp = $state<GCPStatus | null>(null)
   let gcpCreds = $state('')
-  let gcpProjectId = $state<string | null>(null)  // extracted client-side on paste
+  let gcpProjectId = $state<string | null>(null)
   let gcpTables = $state<string[]>([])
   let gcpSelectedTable = $state('')
   let gcpLogsTable = $state('')
@@ -19,6 +24,10 @@
   let gcpValidating = $state(false)
   let gcpConnecting = $state(false)
   let gcpError = $state('')
+
+  // ── Copy states ──────────────────────────────────────────────────────
+  let proxyCopied = $state(false)
+  let cmdCopied = $state(false)
 
   const SERVICE_ACCOUNT_CMD = `gcloud iam service-accounts create burnmeter-reader \\
   --display-name="Burnmeter read-only" --project=PROJECT_ID && \\
@@ -31,11 +40,8 @@ gcloud projects add-iam-policy-binding PROJECT_ID \\
 gcloud iam service-accounts keys create burnmeter-key.json \\
   --iam-account="burnmeter-reader@PROJECT_ID.iam.gserviceaccount.com"`
 
-  let cmdCopied = $state(false)
-
   const proxyUrl = `${location.protocol}//${location.hostname}:8400/proxy/gemini`
   const liveProxyUrl = `ws://${location.hostname}:8400/proxy/gemini`
-  let proxyCopied = $state(false)
 
   api.gcpStatus().then((s) => (gcp = s))
 
@@ -99,6 +105,7 @@ gcloud iam service-accounts keys create burnmeter-key.json \\
     try {
       await api.addProvider(name, keyInput[name] ?? '')
       keyInput = { ...keyInput, [name]: '' }
+      selectedProvider = null
       await load()
     } catch (e: any) {
       errors = { ...errors, [name]: e.message }
@@ -110,6 +117,7 @@ gcloud iam service-accounts keys create burnmeter-key.json \\
   async function remove(name: string) {
     if (!confirm(`Remove ${name}? Its stored key and local usage history will be deleted.`)) return
     await api.removeProvider(name)
+    selectedProvider = null
     await load()
   }
 
@@ -123,6 +131,11 @@ gcloud iam service-accounts keys create burnmeter-key.json \\
     navigator.clipboard.writeText(SERVICE_ACCOUNT_CMD)
     cmdCopied = true
     setTimeout(() => (cmdCopied = false), 1500)
+  }
+
+  function selectProvider(name: string) {
+    selectedProvider = selectedProvider === name ? null : name
+    errors = { ...errors, [name]: '' }
   }
 </script>
 
