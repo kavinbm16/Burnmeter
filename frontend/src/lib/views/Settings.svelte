@@ -5,7 +5,7 @@
   // ── Tab + selection state ────────────────────────────────────────────
   let activeTab = $state<'providers' | 'billing'>('providers')
   let selectedProvider = $state<string | null>(null)
-  let geminiProxyOpen = $state(false)
+  let proxyLang = $state<'python' | 'node' | 'curl'>('python')
 
   // ── Provider state ───────────────────────────────────────────────────
   let data = $state<ProvidersResponse | null>(null)
@@ -28,6 +28,7 @@
   // ── Copy states ──────────────────────────────────────────────────────
   let proxyCopied = $state(false)
   let cmdCopied = $state(false)
+  let snippetCopied = $state(false)
 
   const SERVICE_ACCOUNT_CMD = `gcloud iam service-accounts create burnmeter-reader \\
   --display-name="Burnmeter read-only" --project=PROJECT_ID && \\
@@ -125,6 +126,35 @@ gcloud iam service-accounts keys create burnmeter-key.json \\
     navigator.clipboard.writeText(proxyUrl)
     proxyCopied = true
     setTimeout(() => (proxyCopied = false), 1500)
+  }
+
+  function proxySnippet(lang: 'python' | 'node' | 'curl'): string {
+    if (lang === 'node') {
+      return `import { GoogleGenAI } from "@google/genai";
+
+const ai = new GoogleGenAI({
+  apiKey: "YOUR_KEY",
+  httpOptions: { baseUrl: "${proxyUrl}" },
+});`
+    }
+    if (lang === 'curl') {
+      return `curl ${proxyUrl}/v1beta/models/gemini-2.0-flash:generateContent \\
+  -H "x-goog-api-key: YOUR_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"contents":[{"parts":[{"text":"Hello"}]}]}'`
+    }
+    return `from google import genai
+
+client = genai.Client(
+    api_key="YOUR_KEY",
+    http_options={"base_url": "${proxyUrl}"},
+)`
+  }
+
+  function copySnippet() {
+    navigator.clipboard.writeText(proxySnippet(proxyLang))
+    snippetCopied = true
+    setTimeout(() => (snippetCopied = false), 1500)
   }
 
   function copyCmd() {
