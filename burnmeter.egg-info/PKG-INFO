@@ -16,6 +16,7 @@ Requires-Dist: cryptography>=43.0
 Requires-Dist: pydantic>=2.8
 Provides-Extra: billing
 Requires-Dist: google-cloud-bigquery>=3.25; extra == "billing"
+Requires-Dist: google-auth>=2.30; extra == "billing"
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0; extra == "dev"
 Requires-Dist: pytest-asyncio>=0.24; extra == "dev"

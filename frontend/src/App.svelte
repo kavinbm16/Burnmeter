@@ -51,7 +51,7 @@
   <header class="hairline-b sticky top-0 z-10 backdrop-blur" style="background: color-mix(in oklch, var(--ink) 88%, transparent);">
     <div class="flex items-center gap-8 py-4">
       <button
-        class="text-lg font-bold"
+        class="focus-ring text-lg font-bold"
         style="letter-spacing: 0.25em;"
         onclick={() => { tab = 'dashboard'; detailProvider = null }}
       >
@@ -61,7 +61,7 @@
       <nav class="flex gap-6">
         {#each NAV as n (n.id)}
           <button
-            class="microlabel-dim pb-0.5 transition-colors"
+            class="focus-ring microlabel-dim pb-0.5 transition-colors"
             style={tab === n.id ? 'color: var(--paper); border-bottom: 1px solid var(--red);' : ''}
             onclick={() => { tab = n.id; detailProvider = null }}
           >{n.label}</button>
@@ -74,14 +74,14 @@
             bind:value={period}
             class="microlabel-dim cursor-pointer border border-hairline bg-ink px-2 py-1.5 focus:border-red focus:outline-none"
           >
-            <option value="mtd">MTD</option>
+            <option value="mtd">This month</option>
             <option value="30d">30D</option>
             <option value="90d">90D</option>
           </select>
-          <button class="microlabel-dim hover:text-paper" onclick={exportPoster}>POSTER ↓</button>
+          <button class="focus-ring microlabel-dim hover:text-paper" onclick={exportPoster}>EXPORT POSTER</button>
         {/if}
         <button
-          class="microlabel border border-hairline px-3 py-1.5 transition-colors hover:border-red disabled:opacity-40"
+          class="focus-ring microlabel border border-hairline px-3 py-1.5 transition-colors hover:border-red disabled:opacity-40"
           onclick={syncNow}
           disabled={syncing}
         >{syncing ? 'SYNCING…' : 'SYNC'}</button>

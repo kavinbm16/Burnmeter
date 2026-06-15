@@ -89,6 +89,13 @@ body {
   border-bottom: 1px solid var(--hairline);
 }
 
+@utility focus-ring {
+  &:focus-visible {
+    outline: 2px solid var(--red);
+    outline-offset: 2px;
+  }
+}
+
 /* red flash when a cell's data changes (live updates) */
 @utility pulse-red {
   animation: pulse-red 0.6s ease-out;

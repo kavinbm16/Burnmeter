@@ -49,7 +49,7 @@
 
     <div class="mt-5 flex items-baseline justify-between">
       <span class="microlabel">Tokenized</span>
-      <span class="microlabel-dim">o200k_base · runs locally, text never leaves this page</span>
+      <span class="microlabel-dim">OpenAI token encoding · runs locally, text never leaves this page</span>
     </div>
     <div class="mt-3 flex flex-wrap gap-1 leading-relaxed">
       {#each tokens as t, i (i)}
