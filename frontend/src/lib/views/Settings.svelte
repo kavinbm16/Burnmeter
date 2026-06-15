@@ -26,7 +26,6 @@
   let gcpError = $state('')
 
   // ── Copy states ──────────────────────────────────────────────────────
-  let proxyCopied = $state(false)
   let cmdCopied = $state(false)
   let snippetCopied = $state(false)
 
@@ -120,12 +119,6 @@ gcloud iam service-accounts keys create burnmeter-key.json \\
     await api.removeProvider(name)
     selectedProvider = null
     await load()
-  }
-
-  function copyProxy() {
-    navigator.clipboard.writeText(proxyUrl)
-    proxyCopied = true
-    setTimeout(() => (proxyCopied = false), 1500)
   }
 
   function proxySnippet(lang: 'python' | 'node' | 'curl'): string {
