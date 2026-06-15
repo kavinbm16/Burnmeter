@@ -187,48 +187,178 @@ client = genai.Client(
 
   {#if activeTab === 'providers'}
     {#if data}
-      <!-- Provider card grid -->
-      <div class="bento" style="grid-template-columns: repeat(3, 1fr);">
+      <!-- Provider accordion rows -->
+      <div class="border border-hairline">
         {#each Object.entries(data.available) as [name, meta] (name)}
           {@const cfg = data.configured.find((c) => c.name === name)}
-          <button
-            class="cell focus-ring text-left transition-colors hover:bg-ink-2"
-            style={selectedProvider === name ? 'outline: 1px solid var(--red); outline-offset: -1px;' : ''}
-            onclick={() => selectProvider(name)}
-          >
-            <div class="microlabel">{meta.display_name}</div>
-            <div class="microlabel-dim mt-1">{meta.mode === 'proxy' ? 'local proxy' : 'usage api'}</div>
-            {#if cfg}
-              <div class="mt-3 flex items-center gap-2">
-                <span style="color: var(--red); font-size: 0.6rem;">●</span>
-                <span class="numeral text-xs" style="color: var(--muted);">{cfg.masked_key}</span>
+          <div class="border-b border-hairline last:border-b-0">
+            <!-- Row header (click toggles) -->
+            <button
+              class="focus-ring flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-ink-2"
+              onclick={() => selectProvider(name)}
+            >
+              <div>
+                <div class="microlabel">{meta.display_name}</div>
+                <div class="microlabel-dim mt-0.5">{meta.mode === 'proxy' ? 'local proxy' : 'usage api'}</div>
               </div>
-              {#if cfg.sync_status === 'invalid_key' || cfg.sync_status === 'error'}
-                <div class="mt-1 text-xs" style="color: var(--red)">▲ key error</div>
-              {:else if cfg.last_synced_at}
-                <div class="microlabel-dim mt-2">synced {cfg.last_synced_at}Z</div>
-              {/if}
-            {:else}
-              <div class="mt-3">
-                <span class="microlabel-dim" style="color: var(--red);">CONNECT →</span>
+              <div class="flex items-center gap-3">
+                {#if cfg}
+                  {#if cfg.sync_status === 'invalid_key' || cfg.sync_status === 'error'}
+                    <span class="text-xs" style="color: var(--red)">▲ key error</span>
+                  {:else}
+                    <span class="flex items-center gap-2">
+                      <span style="color: var(--red); font-size: 0.6rem;">●</span>
+                      {#if cfg.last_synced_at}
+                        <span class="microlabel-dim">synced {cfg.last_synced_at}Z</span>
+                      {/if}
+                    </span>
+                  {/if}
+                {:else}
+                  <span class="microlabel-dim" style="color: var(--red);">connect →</span>
+                {/if}
+                <span class="microlabel-dim">{selectedProvider === name ? '▴' : '▾'}</span>
+              </div>
+            </button>
+
+            <!-- Expanded body -->
+            {#if selectedProvider === name}
+              <div class="border-t border-hairline bg-ink-2 px-4 py-4">
+
+                {#if meta.mode === 'proxy'}
+                  <!-- Gemini-style guided 1-2-3 -->
+                  {#if cfg}
+                    <!-- Manage strip -->
+                    <div class="mb-4 flex items-center gap-3 border-b border-hairline pb-3">
+                      <span style="color: var(--red); font-size: 0.6rem;">●</span>
+                      <code class="numeral text-xs">{cfg.masked_key}</code>
+                      {#if cfg.last_synced_at}
+                        <span class="microlabel-dim">· last sync {cfg.last_synced_at}Z</span>
+                      {/if}
+                      <div class="ml-auto flex gap-3">
+                        <button class="focus-ring microlabel border border-hairline px-3 py-1 hover:border-red" onclick={() => api.sync()}>SYNC NOW</button>
+                        <button class="focus-ring microlabel-dim hover:text-paper" onclick={() => remove(name)}>REMOVE</button>
+                      </div>
+                    </div>
+                  {/if}
+
+                  <!-- Step 1: add key (optional) -->
+                  <div class="flex items-center gap-2">
+                    <span class="microlabel shrink-0" style="background: var(--red); color: var(--ink); padding: 1px 6px;">1</span>
+                    <span class="microlabel">ADD KEY (OPTIONAL)</span>
+                  </div>
+                  {#if !cfg}
+                    <div class="mt-2 flex gap-px">
+                      <input
+                        type="password"
+                        placeholder="AIza…"
+                        bind:value={keyInput[name]}
+                        class="numeral flex-1 border border-hairline bg-ink px-3 py-2 text-sm text-paper placeholder:text-muted/70 focus:border-red focus:outline-none"
+                        onkeydown={(e) => e.key === 'Enter' && add(name)}
+                      />
+                      <button
+                        class="focus-ring bg-red px-5 text-xs font-bold tracking-widest text-ink disabled:opacity-40"
+                        disabled={busy === name || !(keyInput[name] ?? '').trim()}
+                        onclick={() => add(name)}
+                      >{busy === name ? '…' : 'ADD KEY'}</button>
+                    </div>
+                    <p class="microlabel-dim mt-1">or skip — pass your own key per request</p>
+                    {#if errors[name]}
+                      <p class="mt-2 text-sm" style="color: var(--red)">▲ {errors[name]}</p>
+                    {/if}
+                  {/if}
+
+                  <!-- Step 2: point app at proxy -->
+                  <div class="mt-5 flex items-center gap-2">
+                    <span class="microlabel shrink-0" style="background: var(--red); color: var(--ink); padding: 1px 6px;">2</span>
+                    <span class="microlabel">POINT YOUR APP AT THE PROXY</span>
+                  </div>
+                  <div class="mt-2 flex gap-px">
+                    {#each ['python', 'node', 'curl'] as const as lang}
+                      <button
+                        class="focus-ring microlabel border border-hairline px-3 py-1.5 transition-colors hover:text-paper"
+                        style={proxyLang === lang ? 'color: var(--paper); border-color: var(--red);' : ''}
+                        onclick={() => (proxyLang = lang)}
+                      >{lang === 'curl' ? 'cURL' : lang === 'node' ? 'NODE' : 'PYTHON'}</button>
+                    {/each}
+                  </div>
+                  <div class="relative mt-2">
+                    <button class="focus-ring microlabel-dim absolute right-2 top-2 hover:text-paper" onclick={copySnippet}>
+                      {snippetCopied ? 'COPIED ✓' : 'COPY'}
+                    </button>
+                    <pre class="overflow-x-auto border border-hairline bg-ink px-3 py-2 text-xs" style="color: var(--muted)">{proxySnippet(proxyLang)}</pre>
+                  </div>
+                  <p class="microlabel-dim mt-2">Live / streaming? Use <code class="numeral">{liveProxyUrl}</code></p>
+
+                  <!-- Step 3: run -->
+                  <div class="mt-5 flex items-center gap-2">
+                    <span class="microlabel shrink-0" style="background: var(--red); color: var(--ink); padding: 1px 6px;">3</span>
+                    <span class="microlabel">RUN — USAGE COUNTS AUTOMATICALLY</span>
+                  </div>
+                  <p class="microlabel-dim mt-2">
+                    {gcp?.configured
+                      ? 'traffic via proxy is estimated — GCP billing reconciliation active ✓'
+                      : 'costs are estimated — connect GCP billing for actual billed amounts'}
+                  </p>
+
+                {:else}
+                  <!-- usage_api provider (OpenAI) -->
+                  {#if cfg}
+                    <div class="flex items-center gap-3">
+                      <span style="color: var(--red); font-size: 0.6rem;">●</span>
+                      <code class="numeral text-xs">{cfg.masked_key}</code>
+                      {#if cfg.last_synced_at}
+                        <span class="microlabel-dim">· last sync {cfg.last_synced_at}Z</span>
+                      {/if}
+                    </div>
+                    {#if cfg.sync_status === 'invalid_key' || cfg.sync_status === 'error'}
+                      <p class="mt-2 text-sm" style="color: var(--red)">▲ {cfg.sync_error ?? 'sync failed'}</p>
+                    {/if}
+                    <div class="mt-3 flex gap-3">
+                      <button class="focus-ring microlabel border border-hairline px-3 py-1.5 hover:border-red" onclick={() => api.sync()}>SYNC NOW</button>
+                      <button class="focus-ring microlabel-dim hover:text-paper" onclick={() => remove(name)}>REMOVE</button>
+                    </div>
+                  {:else}
+                    <p class="mb-3 text-sm" style="color: var(--muted)">{meta.key_hint}</p>
+                    <div class="microlabel mb-1">API KEY</div>
+                    <div class="flex gap-px">
+                      <input
+                        type="password"
+                        placeholder="sk-admin-…"
+                        bind:value={keyInput[name]}
+                        class="numeral flex-1 border border-hairline bg-ink px-3 py-2 text-sm text-paper placeholder:text-muted/70 focus:border-red focus:outline-none"
+                        onkeydown={(e) => e.key === 'Enter' && add(name)}
+                      />
+                      <button
+                        class="focus-ring bg-red px-5 text-xs font-bold tracking-widest text-ink disabled:opacity-40"
+                        disabled={busy === name || !(keyInput[name] ?? '').trim()}
+                        onclick={() => add(name)}
+                      >{busy === name ? '…' : 'ADD KEY'}</button>
+                    </div>
+                    {#if errors[name]}
+                      <p class="mt-2 text-sm" style="color: var(--red)">▲ {errors[name]}</p>
+                    {/if}
+                  {/if}
+                {/if}
+
               </div>
             {/if}
-          </button>
+          </div>
         {/each}
 
-        <!-- Vertex AI auto-card (read-only, no click) -->
+        <!-- Vertex AI read-only row -->
         {#if data.configured.find((c) => c.name === 'vertex_ai')}
           {@const vtx = data.configured.find((c) => c.name === 'vertex_ai')!}
-          <div class="cell">
-            <div class="microlabel">Google Vertex AI</div>
-            <div class="microlabel-dim mt-1">billing export</div>
-            <div class="mt-3 flex items-center gap-2">
-              <span style="color: var(--red); font-size: 0.6rem;">●</span>
-              <span class="microlabel-dim">via GCP billing</span>
+          <div class="flex items-center justify-between border-b border-hairline px-4 py-3 last:border-b-0">
+            <div>
+              <div class="microlabel">Google Vertex AI</div>
+              <div class="microlabel-dim mt-0.5">via GCP billing</div>
             </div>
-            {#if vtx.last_synced_at}
-              <div class="microlabel-dim mt-2">synced {vtx.last_synced_at}Z</div>
-            {/if}
+            <span class="flex items-center gap-2">
+              <span style="color: var(--red); font-size: 0.6rem;">●</span>
+              {#if vtx.last_synced_at}
+                <span class="microlabel-dim">synced {vtx.last_synced_at}Z</span>
+              {/if}
+            </span>
           </div>
         {/if}
       </div>
@@ -237,104 +367,6 @@ client = genai.Client(
       <div class="mt-px border border-dashed border-hairline px-4 py-3 text-center">
         <span class="microlabel-dim">+ ADD ANOTHER PROVIDER</span>
       </div>
-
-      <!-- Detail panel — appears when a provider card is selected -->
-      {#if selectedProvider && data.available[selectedProvider]}
-        {@const meta = data.available[selectedProvider]}
-        {@const cfg = data.configured.find((c) => c.name === selectedProvider)}
-        <div class="mt-1 border border-red bg-ink-2 p-5">
-          <div class="flex items-center justify-between mb-4">
-            <span class="microlabel">{cfg ? 'MANAGE' : 'CONNECT'} {meta.display_name}</span>
-            <button
-              class="focus-ring microlabel-dim hover:text-paper"
-              onclick={() => (selectedProvider = null)}
-            >✕</button>
-          </div>
-
-          {#if cfg}
-            <!-- Manage mode -->
-            <div class="flex items-center gap-2">
-              <span style="color: var(--red); font-size: 0.6rem;">●</span>
-              <code class="numeral text-xs">{cfg.masked_key}</code>
-            </div>
-            {#if cfg.last_synced_at}
-              <div class="microlabel-dim mt-1">Last sync {cfg.last_synced_at}Z</div>
-            {/if}
-            {#if cfg.sync_status === 'invalid_key' || cfg.sync_status === 'error'}
-              <p class="mt-2 text-sm" style="color: var(--red)">▲ {cfg.sync_error ?? 'sync failed'}</p>
-            {/if}
-            <div class="mt-4 flex gap-3">
-              <button
-                class="focus-ring microlabel border border-hairline px-3 py-1.5 hover:border-red"
-                onclick={() => api.sync()}
-              >SYNC NOW</button>
-              <button
-                class="focus-ring microlabel-dim hover:text-paper"
-                onclick={() => remove(selectedProvider!)}
-              >REMOVE</button>
-            </div>
-
-            <!-- Gemini proxy endpoints (toggle) -->
-            {#if selectedProvider === 'gemini'}
-              <div class="mt-5 border-t border-hairline pt-4">
-                <button
-                  class="focus-ring microlabel-dim hover:text-paper"
-                  onclick={() => (geminiProxyOpen = !geminiProxyOpen)}
-                >▸ Proxy endpoints</button>
-                {#if geminiProxyOpen}
-                  <div class="mt-3 space-y-3">
-                    <div>
-                      <div class="flex items-center justify-between">
-                        <span class="microlabel">HTTP endpoint</span>
-                        <button class="focus-ring microlabel-dim hover:text-paper" onclick={copyProxy}>
-                          {proxyCopied ? 'COPIED ✓' : 'COPY'}
-                        </button>
-                      </div>
-                      <code class="numeral mt-1 block truncate text-xs">{proxyUrl}</code>
-                      <pre class="mt-2 overflow-x-auto text-xs" style="color: var(--muted)">{`client = genai.Client(
-    api_key=...,
-    http_options={"base_url": "${proxyUrl}"},
-)`}</pre>
-                    </div>
-                    <div>
-                      <span class="microlabel">WebSocket endpoint</span>
-                      <code class="numeral mt-1 block truncate text-xs">{liveProxyUrl}</code>
-                    </div>
-                    <p class="microlabel-dim">
-                      {gcp?.configured
-                        ? 'traffic via proxy is estimated — GCP billing reconciliation active ✓'
-                        : 'costs are estimated — connect GCP billing for actual billed amounts'}
-                    </p>
-                  </div>
-                {/if}
-              </div>
-            {/if}
-
-          {:else}
-            <!-- Connect mode -->
-            <p class="mb-4 text-sm" style="color: var(--muted)">{meta.key_hint}</p>
-            <div class="microlabel mb-1">API KEY</div>
-            <div class="flex gap-px">
-              <input
-                type="password"
-                placeholder={selectedProvider === 'openai' ? 'sk-admin-…' : selectedProvider === 'gemini' ? 'AIza…' : '…'}
-                bind:value={keyInput[selectedProvider]}
-                class="numeral flex-1 border border-hairline bg-ink px-3 py-2 text-sm text-paper
-                       placeholder:text-muted/70 focus:border-red focus:outline-none"
-                onkeydown={(e) => e.key === 'Enter' && add(selectedProvider!)}
-              />
-              <button
-                class="focus-ring bg-red px-5 text-xs font-bold tracking-widest text-ink disabled:opacity-40"
-                disabled={busy === selectedProvider || !(keyInput[selectedProvider] ?? '').trim()}
-                onclick={() => add(selectedProvider!)}
-              >{busy === selectedProvider ? '…' : 'ADD KEY'}</button>
-            </div>
-            {#if errors[selectedProvider]}
-              <p class="mt-2 text-sm" style="color: var(--red)">▲ {errors[selectedProvider]}</p>
-            {/if}
-          {/if}
-        </div>
-      {/if}
 
     {:else}
       <div class="bento grid-cols-1"><div class="cell h-40 animate-pulse"></div></div>
