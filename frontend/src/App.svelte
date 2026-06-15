@@ -46,7 +46,7 @@
   }
 </script>
 
-<div class="mx-auto min-h-screen max-w-7xl px-6">
+<div class="mx-auto flex min-h-screen max-w-7xl flex-col px-6">
   <!-- masthead -->
   <header class="sticky top-0 z-10 backdrop-blur" style="background: color-mix(in oklch, var(--ink) 88%, transparent);">
     <!-- Row 1: brand + global sync -->
@@ -97,7 +97,7 @@
     </div>
   </header>
 
-  <main class="py-6">
+  <main class="flex-1 py-6">
     {#if tab === 'providers'}
       <Settings />
     {:else if tab === 'playground'}
