@@ -2,15 +2,14 @@
   import Dashboard from '$lib/views/Dashboard.svelte'
   import ProviderDetail from '$lib/views/ProviderDetail.svelte'
   import Settings from '$lib/views/Settings.svelte'
-
-  // gpt-tokenizer ships multi-MB BPE ranks — load the playground on demand
-  const playgroundImport = () => import('$lib/views/Playground.svelte')
+  import Budget from '$lib/views/Budget.svelte'
+  import Optimizer from '$lib/views/Optimizer.svelte'
   import LiveTicker from '$lib/components/LiveTicker.svelte'
   import Poster from '$lib/components/Poster.svelte'
   import { api } from '$lib/api'
   import type { LeaderboardModel, Overview } from '$lib/api'
 
-  type Tab = 'dashboard' | 'playground' | 'providers'
+  type Tab = 'dashboard' | 'budget' | 'optimize' | 'providers'
   let tab = $state<Tab>('dashboard')
   let detailProvider = $state<string | null>(null)
   let period = $state('mtd')
@@ -20,7 +19,8 @@
 
   const NAV: { id: Tab; label: string }[] = [
     { id: 'dashboard', label: 'DASHBOARD' },
-    { id: 'playground', label: 'TOKENIZER' },
+    { id: 'budget', label: 'BUDGET' },
+    { id: 'optimize', label: 'OPTIMIZE' },
     { id: 'providers', label: 'PROVIDERS' },
   ]
 
@@ -100,12 +100,10 @@
   <main class="flex-1 py-6">
     {#if tab === 'providers'}
       <Settings />
-    {:else if tab === 'playground'}
-      {#await playgroundImport()}
-        <div class="bento grid-cols-1"><div class="cell h-48 animate-pulse"></div></div>
-      {:then { default: Playground }}
-        <Playground />
-      {/await}
+    {:else if tab === 'budget'}
+      <Budget />
+    {:else if tab === 'optimize'}
+      <Optimizer />
     {:else if detailProvider}
       <ProviderDetail
         provider={detailProvider}

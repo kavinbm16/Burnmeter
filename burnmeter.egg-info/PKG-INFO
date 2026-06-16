@@ -55,18 +55,22 @@ Add your API keys and get a live breakdown of token usage and cost: per provider
 ```bash
 git clone https://github.com/kavinbm16/burnmeter && cd burnmeter
 
-# backend
-uv venv && uv pip install -e '.[dev]'
-.venv/bin/python -m backend.main       # → http://127.0.0.1:8400
-
-# frontend (dev mode)
-cd frontend && npm install && npm run dev   # → http://localhost:5173
-
-# — or build once and serve via the backend:
-npm run build                              # then just open :8400
+make install     # uv venv + deps, npm install
+make start       # build frontend, serve everything → http://127.0.0.1:8400
 ```
 
-Open the dashboard → **Providers** → add a key.
+That's it — one command, one server, one port. Open the dashboard → **Providers** → add a key.
+
+### One startup point
+
+The backend serves the built frontend, so the whole app runs from a single process on `:8400` — there is no separate frontend server to run in production. Two commands cover the two modes:
+
+| Command | What runs | URL |
+|---|---|---|
+| `make start` | Builds the frontend, then the backend serves it. One process. | http://127.0.0.1:8400 |
+| `make dev` | Backend **and** Vite hot-reload together (Ctrl-C stops both). | http://localhost:5173 |
+
+Use `make dev` while hacking on the UI (instant reload); use `make start` to just run it. Prefer raw commands? See the [Makefile](Makefile) — each target is one line.
 
 ---
 
@@ -113,8 +117,8 @@ Enforced by tests and documented in [SECURITY.md](SECURITY.md). The codebase is 
 ## Development
 
 ```bash
-.venv/bin/python -m pytest       # backend tests
-cd frontend && npm run check     # svelte type check
+make test        # backend tests  (.venv/bin/python -m pytest)
+make check       # svelte type check
 ```
 
 PRs welcome — especially new provider adapters. An adapter is one file implementing `ProviderAdapter` (`backend/providers/base.py`) plus a fixture-based test.

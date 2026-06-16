@@ -4,7 +4,10 @@
       "Bash(rtk find *)",
       "Read(//Users/kavin/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/subagent-driven-development/**)",
       "Bash(rtk npm *)",
-      "Bash(rtk curl *)"
+      "Bash(rtk curl *)",
+      "Bash(.venv/bin/python -m npm_run_script)",
+      "Bash(rtk npx *)",
+      "Bash(rtk grep *)"
     ]
   }
 }
