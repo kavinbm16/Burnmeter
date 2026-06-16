@@ -37,7 +37,9 @@
           const e = JSON.parse(msg.data) as LiveEvent
           events = [e, ...events].slice(0, 12)
           onevent?.()
-        } catch {}
+        } catch (err) {
+          console.error('[LiveTicker] Failed to parse WebSocket message:', msg.data, err)
+        }
       }
       ws.onclose = () => {
         connected = false
