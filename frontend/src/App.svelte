@@ -46,7 +46,7 @@
   }
 </script>
 
-<div class="mx-auto flex min-h-screen max-w-7xl flex-col px-6">
+<div class="mx-auto flex min-h-screen max-w-[110rem] flex-col px-8">
   <!-- masthead -->
   <header class="sticky top-0 z-10 backdrop-blur" style="background: color-mix(in oklch, var(--ink) 88%, transparent);">
     <!-- Row 1: brand + global sync -->

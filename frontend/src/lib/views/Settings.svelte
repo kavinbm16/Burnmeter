@@ -177,7 +177,7 @@ client = genai.Client(
             : 'border-color: transparent;'}
           onclick={() => select(name)}
         >
-          <span class="microlabel">{meta.display_name}</span>
+          <span class="text-sm font-medium uppercase tracking-wide">{meta.display_name}</span>
           {#if cfg}
             {#if cfg.sync_status === 'invalid_key' || cfg.sync_status === 'error'}
               <span class="text-xs" style="color: var(--red)">▲</span>
@@ -198,7 +198,7 @@ client = genai.Client(
             : 'border-color: transparent;'}
           onclick={() => select('vertex')}
         >
-          <span class="microlabel">Google Vertex AI</span>
+          <span class="text-sm font-medium uppercase tracking-wide">Google Vertex AI</span>
           <span style="color: var(--red); font-size: 0.6rem;">●</span>
         </button>
       {/if}
@@ -211,7 +211,7 @@ client = genai.Client(
           : 'border-color: transparent;'}
         onclick={() => select('billing')}
       >
-        <span class="microlabel">Billing &amp; GCP</span>
+        <span class="text-sm font-medium uppercase tracking-wide">Billing &amp; GCP</span>
         {#if gcp?.configured}
           <span style="color: var(--red); font-size: 0.6rem;">●</span>
         {/if}
@@ -227,9 +227,9 @@ client = genai.Client(
 
       {#if selected === 'billing'}
         <!-- Billing & GCP -->
-        <div class="max-w-2xl">
+        <div class="w-full">
           <div class="flex items-baseline gap-3 mb-1">
-            <h2 class="text-sm font-bold uppercase tracking-widest">Google Cloud Platform</h2>
+            <h2 class="text-xl font-bold uppercase tracking-widest">Google Cloud Platform</h2>
             {#if gcp?.configured}
               <span class="numeral ml-auto text-xs" style="color: var(--red)">● {gcp.project_id}</span>
               <button class="focus-ring microlabel-dim hover:text-paper" onclick={disconnectGCP}>REMOVE</button>
@@ -277,7 +277,7 @@ client = genai.Client(
 
           {:else}
             <!-- Setup flow -->
-            <p class="mb-5 text-sm" style="color: var(--muted)">
+            <p class="mb-5 text-base" style="color: var(--muted)">
               One service account connects Gemini API billing reconciliation and Vertex AI cost tracking.
             </p>
             <div class="space-y-px">
@@ -286,8 +286,8 @@ client = genai.Client(
               <div class="flex items-start gap-4 border border-hairline p-4">
                 <span class="microlabel mt-0.5 shrink-0" style="background: var(--red); color: var(--ink); padding: 1px 6px;">1</span>
                 <div class="flex-1 min-w-0">
-                  <div class="microlabel-dim">CREATE SERVICE ACCOUNT</div>
-                  <p class="mt-1 text-xs" style="color: var(--muted)">Replace PROJECT_ID with your GCP project. Run in your terminal.</p>
+                  <div class="text-sm font-semibold uppercase tracking-widest" style="color: var(--muted)">CREATE SERVICE ACCOUNT</div>
+                  <p class="mt-1 text-sm" style="color: var(--muted)">Replace PROJECT_ID with your GCP project. Run in your terminal.</p>
                 </div>
                 <button class="focus-ring microlabel-dim hover:text-paper shrink-0" onclick={copyCmd}>
                   {cmdCopied ? 'COPIED ✓' : 'COPY COMMAND'}
@@ -298,7 +298,7 @@ client = genai.Client(
               <div class="border border-hairline p-4">
                 <div class="flex items-center gap-4 mb-3">
                   <span class="microlabel shrink-0" style="background: var(--red); color: var(--ink); padding: 1px 6px;">2</span>
-                  <div class="microlabel-dim">PASTE SERVICE ACCOUNT JSON</div>
+                  <div class="text-sm font-semibold uppercase tracking-widest" style="color: var(--muted)">PASTE SERVICE ACCOUNT JSON</div>
                 </div>
                 <textarea
                   placeholder="Paste service-account JSON here…"
@@ -325,7 +325,7 @@ client = genai.Client(
                 <div class="border border-hairline p-4">
                   <div class="flex items-center gap-4 mb-3">
                     <span class="microlabel shrink-0" style="background: var(--red); color: var(--ink); padding: 1px 6px;">3</span>
-                    <div class="microlabel-dim">SELECT BILLING TABLE</div>
+                    <div class="text-sm font-semibold uppercase tracking-widest" style="color: var(--muted)">SELECT BILLING TABLE</div>
                   </div>
                   <select
                     bind:value={gcpSelectedTable}
@@ -374,8 +374,8 @@ client = genai.Client(
       {:else if selected === 'vertex'}
         <!-- Vertex AI: read-only, managed through Billing & GCP -->
         {@const vtx = data.configured.find((c) => c.name === 'vertex_ai')}
-        <div class="max-w-2xl">
-          <h2 class="text-sm font-bold uppercase tracking-widest">Google Vertex AI</h2>
+        <div class="w-full">
+          <h2 class="text-xl font-bold uppercase tracking-widest">Google Vertex AI</h2>
           <p class="microlabel-dim mb-5 mt-1">billing export</p>
           <div class="border border-hairline p-5">
             <div class="flex items-center gap-2">
@@ -385,7 +385,7 @@ client = genai.Client(
             {#if vtx?.last_synced_at}
               <p class="microlabel-dim mt-2">Last sync {vtx.last_synced_at}Z</p>
             {/if}
-            <p class="mt-4 text-sm" style="color: var(--muted)">
+            <p class="mt-4 text-base" style="color: var(--muted)">
               Vertex AI cost is sourced from the connected GCP billing export — there is no separate key.
             </p>
             <button
@@ -399,9 +399,9 @@ client = genai.Client(
         <!-- Provider detail -->
         {@const meta = data.available[selected]}
         {@const cfg = data.configured.find((c) => c.name === selected)}
-        <div class="max-w-2xl">
+        <div class="w-full">
           <div class="flex items-baseline gap-3">
-            <h2 class="text-sm font-bold uppercase tracking-widest">{meta.display_name}</h2>
+            <h2 class="text-xl font-bold uppercase tracking-widest">{meta.display_name}</h2>
             <span class="microlabel-dim">{meta.mode === 'proxy' ? 'local proxy' : 'usage api'}</span>
             {#if cfg}
               {#if cfg.sync_status === 'invalid_key' || cfg.sync_status === 'error'}
@@ -432,7 +432,7 @@ client = genai.Client(
               <!-- Step 1 -->
               <div class="flex items-center gap-2">
                 <span class="microlabel shrink-0" style="background: var(--red); color: var(--ink); padding: 1px 6px;">1</span>
-                <span class="microlabel">ADD KEY (OPTIONAL)</span>
+                <span class="text-sm font-semibold uppercase tracking-widest">ADD KEY (OPTIONAL)</span>
               </div>
               {#if !cfg}
                 <div class="mt-2 flex gap-px">
@@ -440,7 +440,7 @@ client = genai.Client(
                     type="password"
                     placeholder="AIza…"
                     bind:value={keyInput[selected]}
-                    class="numeral flex-1 border border-hairline bg-ink px-3 py-2 text-sm text-paper placeholder:text-muted/70 focus:border-red focus:outline-none"
+                    class="numeral flex-1 border border-hairline bg-ink px-3 py-2.5 text-base text-paper placeholder:text-muted/70 focus:border-red focus:outline-none"
                     onkeydown={(e) => e.key === 'Enter' && add(selected)}
                   />
                   <button
@@ -458,7 +458,7 @@ client = genai.Client(
               <!-- Step 2 -->
               <div class="mt-6 flex items-center gap-2">
                 <span class="microlabel shrink-0" style="background: var(--red); color: var(--ink); padding: 1px 6px;">2</span>
-                <span class="microlabel">POINT YOUR APP AT THE PROXY</span>
+                <span class="text-sm font-semibold uppercase tracking-widest">POINT YOUR APP AT THE PROXY</span>
               </div>
               <div class="mt-2 flex gap-px">
                 {#each ['python', 'node', 'curl'] as const as lang}
@@ -473,14 +473,14 @@ client = genai.Client(
                 <button class="focus-ring microlabel-dim absolute right-2 top-2 hover:text-paper" onclick={copySnippet}>
                   {snippetCopied ? 'COPIED ✓' : 'COPY'}
                 </button>
-                <pre class="overflow-x-auto border border-hairline bg-ink px-3 py-3 text-xs" style="color: var(--muted)">{proxySnippet(proxyLang)}</pre>
+                <pre class="overflow-x-auto border border-hairline bg-ink px-4 py-3 text-sm leading-relaxed" style="color: var(--muted)">{proxySnippet(proxyLang)}</pre>
               </div>
               <p class="microlabel-dim mt-2">Live / streaming? Use <code class="numeral">{liveProxyUrl}</code></p>
 
               <!-- Step 3 -->
               <div class="mt-6 flex items-center gap-2">
                 <span class="microlabel shrink-0" style="background: var(--red); color: var(--ink); padding: 1px 6px;">3</span>
-                <span class="microlabel">RUN — USAGE COUNTS AUTOMATICALLY</span>
+                <span class="text-sm font-semibold uppercase tracking-widest">RUN — USAGE COUNTS AUTOMATICALLY</span>
               </div>
               <p class="microlabel-dim mt-2">
                 {gcp?.configured
@@ -506,14 +506,14 @@ client = genai.Client(
                   <p class="mt-2 text-sm" style="color: var(--red)">▲ {cfg.sync_error ?? 'sync failed'}</p>
                 {/if}
               {:else}
-                <p class="mb-3 text-sm" style="color: var(--muted)">{meta.key_hint}</p>
+                <p class="mb-3 text-base" style="color: var(--muted)">{meta.key_hint}</p>
                 <div class="microlabel mb-1">API KEY</div>
                 <div class="flex gap-px">
                   <input
                     type="password"
                     placeholder="sk-admin-…"
                     bind:value={keyInput[selected]}
-                    class="numeral flex-1 border border-hairline bg-ink px-3 py-2 text-sm text-paper placeholder:text-muted/70 focus:border-red focus:outline-none"
+                    class="numeral flex-1 border border-hairline bg-ink px-3 py-2.5 text-base text-paper placeholder:text-muted/70 focus:border-red focus:outline-none"
                     onkeydown={(e) => e.key === 'Enter' && add(selected)}
                   />
                   <button
