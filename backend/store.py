@@ -78,6 +78,11 @@ class Store:
             await db.executescript(SCHEMA)
             await db.commit()
 
+    async def health_check(self) -> None:
+        """Check database connectivity with a simple query."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("SELECT 1")
+
     @staticmethod
     async def _migrate(db: aiosqlite.Connection) -> None:
         """v1 → v2: usage_records gained key_id + audio columns and a wider PK.

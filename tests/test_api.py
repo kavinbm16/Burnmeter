@@ -77,3 +77,8 @@ async def test_live_hub_publishes_and_drops_dead_clients():
     assert good.events == [event]
     assert dead not in hub._clients
     assert good in hub._clients
+
+
+async def test_health_endpoint(store):
+    """Health check should succeed with working database."""
+    await store.health_check()  # Should not raise

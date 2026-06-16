@@ -92,6 +92,21 @@ app.include_router(build_live_router(store, keystore, on_capture=live_hub.publis
 app.include_router(build_gemini_proxy(store, keystore, on_capture=live_hub.publish))
 
 
+@app.get("/health")
+async def health():
+    """Health check endpoint for monitoring and deployment."""
+    try:
+        # Check database connectivity
+        await store.health_check()
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+            "version": "0.1.0",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"unhealthy: {str(e)}")
+
+
 def _period_range(period: str) -> tuple[str, str]:
     today = datetime.now(tz=timezone.utc).date()
     if period == "mtd":
