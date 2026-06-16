@@ -6,6 +6,7 @@
     'Burnmeter splits this sentence into tokens — the unit every provider bills you for.'
   )
   let pricing = $state<Record<string, { input_per_m: number; output_per_m: number }>>({})
+  let tokenizerError = $state<string | null>(null)
 
   api.pricing().then((p) => (pricing = p))
 
@@ -19,8 +20,11 @@
 
   const tokens = $derived.by(() => {
     try {
+      tokenizerError = null
       return encode(text).map((id) => ({ id, str: decode([id]) }))
-    } catch {
+    } catch (err) {
+      console.error('[Playground] Tokenization failed:', err)
+      tokenizerError = 'Unable to tokenize text. Try different input.'
       return []
     }
   })
@@ -51,15 +55,21 @@
       <span class="microlabel">Tokenized</span>
       <span class="microlabel-dim">OpenAI token encoding · runs locally, text never leaves this page</span>
     </div>
-    <div class="mt-3 flex flex-wrap gap-1 leading-relaxed">
-      {#each tokens as t, i (i)}
-        <span
-          class="numeral px-1.5 py-0.5 text-xs"
-          style={CHIP[i % CHIP.length]}
-          title={`token #${i} · id ${t.id}`}
-        >{t.str.replace(/ /g, '␣').replace(/\n/g, '⏎')}</span>
-      {/each}
-    </div>
+    {#if tokenizerError}
+      <div class="mt-3 rounded border border-red/30 bg-red/5 px-3 py-2 text-xs text-red">
+        {tokenizerError}
+      </div>
+    {:else}
+      <div class="mt-3 flex flex-wrap gap-1 leading-relaxed">
+        {#each tokens as t, i (i)}
+          <span
+            class="numeral px-1.5 py-0.5 text-xs"
+            style={CHIP[i % CHIP.length]}
+            title={`token #${i} · id ${t.id}`}
+          >{t.str.replace(/ /g, '␣').replace(/\n/g, '⏎')}</span>
+        {/each}
+      </div>
+    {/if}
   </div>
 
   <div class="cell">
