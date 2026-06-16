@@ -277,35 +277,71 @@ client = genai.Client(
 
           {:else}
             <!-- Setup flow -->
-            <p class="mb-5 text-base" style="color: var(--muted)">
-              One service account connects Gemini API billing reconciliation and Vertex AI cost tracking.
-            </p>
+
+            <!-- How it works -->
+            <div class="mb-6 border border-hairline p-5">
+              <div class="text-sm font-semibold uppercase tracking-widest" style="color: var(--paper)">How it works</div>
+              <p class="mt-2 text-base" style="color: var(--muted)">
+                Google exports your real Cloud Billing line-items to a BigQuery table. Burnmeter reads that
+                table — read-only, through a service account — and reconciles the costs it estimates locally
+                against what Google actually billed.
+              </p>
+              <ul class="mt-3 space-y-1.5 text-sm" style="color: var(--muted)">
+                <li>· <span style="color: var(--paper)">Gemini API</span> — proxy-estimated cost is corrected to the billed amount.</li>
+                <li>· <span style="color: var(--paper)">Vertex AI</span> — cost is read entirely from billing (no API key needed).</li>
+                <li>· Burnmeter never writes to your project. The service account has read-only BigQuery access.</li>
+              </ul>
+              <p class="mt-3 text-sm" style="color: var(--red)">
+                ▲ First-time billing export can take up to 24h before any data appears in BigQuery.
+              </p>
+            </div>
+
+            <p class="mb-3 text-sm font-semibold uppercase tracking-widest" style="color: var(--muted)">What to do</p>
             <div class="space-y-px">
 
-              <!-- Step 1 -->
+              <!-- Step 1: enable billing export -->
               <div class="flex items-start gap-4 border border-hairline p-4">
                 <span class="microlabel mt-0.5 shrink-0" style="background: var(--red); color: var(--ink); padding: 1px 6px;">1</span>
                 <div class="flex-1 min-w-0">
-                  <div class="text-sm font-semibold uppercase tracking-widest" style="color: var(--muted)">CREATE SERVICE ACCOUNT</div>
-                  <p class="mt-1 text-sm" style="color: var(--muted)">Replace PROJECT_ID with your GCP project. Run in your terminal.</p>
+                  <div class="text-sm font-semibold uppercase tracking-widest" style="color: var(--muted)">ENABLE BILLING EXPORT TO BIGQUERY</div>
+                  <p class="mt-1 text-sm" style="color: var(--muted)">
+                    In the Google Cloud console, open <span style="color: var(--paper)">Billing → Billing export → BigQuery export</span>
+                    and enable <span style="color: var(--paper)">Standard usage cost</span>. Pick or create a dataset to hold it.
+                  </p>
+                </div>
+                <a
+                  class="focus-ring microlabel-dim hover:text-paper shrink-0 underline"
+                  href="https://console.cloud.google.com/billing/export"
+                  target="_blank"
+                  rel="noreferrer"
+                >OPEN CONSOLE ↗</a>
+              </div>
+
+              <!-- Step 2: create service account -->
+              <div class="flex items-start gap-4 border border-hairline p-4">
+                <span class="microlabel mt-0.5 shrink-0" style="background: var(--red); color: var(--ink); padding: 1px 6px;">2</span>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-semibold uppercase tracking-widest" style="color: var(--muted)">CREATE A READ-ONLY SERVICE ACCOUNT</div>
+                  <p class="mt-1 text-sm" style="color: var(--muted)">Replace PROJECT_ID with your GCP project, then run this in your terminal. It writes <code class="numeral">burnmeter-key.json</code>.</p>
                 </div>
                 <button class="focus-ring microlabel-dim hover:text-paper shrink-0" onclick={copyCmd}>
                   {cmdCopied ? 'COPIED ✓' : 'COPY COMMAND'}
                 </button>
               </div>
 
-              <!-- Step 2 -->
+              <!-- Step 3: paste JSON -->
               <div class="border border-hairline p-4">
                 <div class="flex items-center gap-4 mb-3">
-                  <span class="microlabel shrink-0" style="background: var(--red); color: var(--ink); padding: 1px 6px;">2</span>
-                  <div class="text-sm font-semibold uppercase tracking-widest" style="color: var(--muted)">PASTE SERVICE ACCOUNT JSON</div>
+                  <span class="microlabel shrink-0" style="background: var(--red); color: var(--ink); padding: 1px 6px;">3</span>
+                  <div class="text-sm font-semibold uppercase tracking-widest" style="color: var(--muted)">PASTE THE SERVICE ACCOUNT JSON</div>
                 </div>
+                <p class="mb-3 text-sm" style="color: var(--muted)">Open the <code class="numeral">burnmeter-key.json</code> file from step 2 and paste its full contents below. It stays on this machine.</p>
                 <textarea
                   placeholder="Paste service-account JSON here…"
                   bind:value={gcpCreds}
                   oninput={() => extractProjectId(gcpCreds)}
                   rows="4"
-                  class="numeral w-full resize-y border border-hairline bg-ink px-3 py-2 text-xs
+                  class="numeral w-full resize-y border border-hairline bg-ink px-3 py-2 text-sm
                          text-paper placeholder:text-muted/60 focus:border-red focus:outline-none"
                 ></textarea>
                 {#if gcpProjectId}
@@ -320,13 +356,14 @@ client = genai.Client(
                 {/if}
               </div>
 
-              <!-- Step 3 -->
+              <!-- Step 4: select table -->
               {#if gcpTables.length > 0}
                 <div class="border border-hairline p-4">
-                  <div class="flex items-center gap-4 mb-3">
-                    <span class="microlabel shrink-0" style="background: var(--red); color: var(--ink); padding: 1px 6px;">3</span>
-                    <div class="text-sm font-semibold uppercase tracking-widest" style="color: var(--muted)">SELECT BILLING TABLE</div>
+                  <div class="flex items-center gap-4 mb-1">
+                    <span class="microlabel shrink-0" style="background: var(--red); color: var(--ink); padding: 1px 6px;">4</span>
+                    <div class="text-sm font-semibold uppercase tracking-widest" style="color: var(--muted)">PICK YOUR BILLING TABLE & CONNECT</div>
                   </div>
+                  <p class="mb-3 text-sm" style="color: var(--muted)">These are the BigQuery tables the service account can read. Choose the one holding your billing export.</p>
                   <select
                     bind:value={gcpSelectedTable}
                     class="numeral w-full border border-hairline bg-ink px-3 py-2 text-xs text-paper focus:border-red focus:outline-none"
