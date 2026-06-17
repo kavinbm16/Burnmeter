@@ -18,6 +18,7 @@ class ModelPrice:
     input_per_m: float                    # text input
     output_per_m: float                   # text output
     cache_read_per_m: float = 0.0
+    cache_write_per_m: float = 0.0        # cache creation tokens (Claude: 25% premium over input)
     audio_input_per_m: float | None = None   # None → audio billed as text
     audio_output_per_m: float | None = None
 
@@ -45,6 +46,17 @@ PRICES: dict[str, ModelPrice] = {
     ),
 }
 
+# Anthropic Claude models — standard tier, verified 2026-06-17
+# cache_write_per_m = input_per_m * 1.25 (prompt caching creation premium)
+PRICES.update({
+    "claude-fable-5":    ModelPrice(10.00, 50.00, cache_read_per_m=1.00,  cache_write_per_m=12.50),
+    "claude-opus-4-8":   ModelPrice(5.00,  25.00, cache_read_per_m=0.50,  cache_write_per_m=6.25),
+    "claude-opus-4-7":   ModelPrice(5.00,  25.00, cache_read_per_m=0.50,  cache_write_per_m=6.25),
+    "claude-opus-4-6":   ModelPrice(5.00,  25.00, cache_read_per_m=0.50,  cache_write_per_m=6.25),
+    "claude-sonnet-4-6": ModelPrice(3.00,  15.00, cache_read_per_m=0.30,  cache_write_per_m=3.75),
+    "claude-haiku-4-5":  ModelPrice(1.00,   5.00, cache_read_per_m=0.10,  cache_write_per_m=1.25),
+})
+
 
 def _lookup(model: str) -> ModelPrice | None:
     if model in PRICES:
@@ -62,26 +74,26 @@ def estimate_cost_usd(
     input_tokens: int,
     output_tokens: int,
     cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
     audio_input_tokens: int = 0,
     audio_output_tokens: int = 0,
 ) -> float | None:
     """Estimated cost, or None when the model isn't in the table.
 
-    `input_tokens`/`output_tokens` are TOTALS (all modalities); the audio
-    portions are passed separately and billed at audio rates when the model
-    has them, so callers can pass Live usageMetadata totals + modality details
-    without pre-splitting.
+    `input_tokens`/`output_tokens` are TOTALS (all modalities); cache and audio
+    portions are passed separately and billed at their own rates.
     """
     p = _lookup(model)
     if p is None:
         return None
     audio_in_rate = p.audio_input_per_m if p.audio_input_per_m is not None else p.input_per_m
     audio_out_rate = p.audio_output_per_m if p.audio_output_per_m is not None else p.output_per_m
-    text_in = max(0, input_tokens - cache_read_tokens - audio_input_tokens)
+    text_in = max(0, input_tokens - cache_read_tokens - cache_write_tokens - audio_input_tokens)
     text_out = max(0, output_tokens - audio_output_tokens)
     return (
         text_in * p.input_per_m
         + cache_read_tokens * p.cache_read_per_m
+        + cache_write_tokens * p.cache_write_per_m
         + audio_input_tokens * audio_in_rate
         + text_out * p.output_per_m
         + audio_output_tokens * audio_out_rate

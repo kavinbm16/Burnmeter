@@ -111,7 +111,7 @@ def usage_to_record(model: str, usage: dict, source: str, key_id: str) -> UsageR
     output = response + thoughts  # thinking tokens are billed as output
     audio_in = _modality_tokens(usage.get("promptTokensDetails"), "AUDIO")
     audio_out = _modality_tokens(usage.get("responseTokensDetails"), "AUDIO")
-    cost = estimate_cost_usd(model, prompt, output, cached, audio_in, audio_out)
+    cost = estimate_cost_usd(model, prompt, output, cache_read_tokens=cached, audio_input_tokens=audio_in, audio_output_tokens=audio_out)
     return UsageRecord(
         provider="gemini",
         model=model,
