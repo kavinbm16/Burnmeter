@@ -1,0 +1,38 @@
+{
+  "data": [
+    {
+      "starting_at": "2026-06-01T00:00:00Z",
+      "ending_at": "2026-06-02T00:00:00Z",
+      "results": [
+        {
+          "model": "claude-opus-4-8",
+          "uncached_input_tokens": 6500,
+          "cache_read_input_tokens": 3000,
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 400,
+            "ephemeral_5m_input_tokens": 100
+          },
+          "output_tokens": 2000,
+          "service_tier": "standard",
+          "workspace_id": null,
+          "api_key_id": null
+        },
+        {
+          "model": "claude-sonnet-4-6",
+          "uncached_input_tokens": 4800,
+          "cache_read_input_tokens": 0,
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "output_tokens": 800,
+          "service_tier": "standard",
+          "workspace_id": null,
+          "api_key_id": null
+        }
+      ]
+    }
+  ],
+  "has_more": false,
+  "next_page": null
+}

@@ -7,7 +7,9 @@
       "Bash(rtk curl *)",
       "Bash(.venv/bin/python -m npm_run_script)",
       "Bash(rtk npx *)",
-      "Bash(rtk grep *)"
+      "Bash(rtk grep *)",
+      "Bash(rtk pytest *)",
+      "Bash(rtk git *)"
     ]
   }
 }
