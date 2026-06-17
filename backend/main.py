@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from backend.keys import KeyStore, install_redaction
 from backend.pricing import PRICES
 from backend.providers.base import InvalidKeyError, ProviderError, mask_key
+from backend.providers.anthropic_adapter import AnthropicAdapter
 from backend.providers.openai_adapter import OpenAIAdapter
 from backend.proxy.gemini_proxy import build_router as build_gemini_proxy
 from backend.store import Store
@@ -27,7 +28,7 @@ install_redaction()
 
 store = Store()
 keystore = KeyStore()
-adapters = {"openai": OpenAIAdapter()}
+adapters = {"openai": OpenAIAdapter(), "anthropic": AnthropicAdapter()}
 sync_engine = SyncEngine(store, keystore, adapters)
 
 
