@@ -96,6 +96,74 @@ async def test_ensure_provider_does_not_overwrite_existing(store):
     assert row["display_name"] == "Google Vertex AI"
 
 
+async def test_overview_uses_cost_records_when_usage_cost_is_missing(store):
+    await store.upsert_usage([
+        UsageRecord("openai", "gpt-4o", "2026-06-01", 1000, 500, requests=2,
+                    cost_usd=None, source="usage_api"),
+        UsageRecord("openai", "gpt-4o-mini", "2026-06-01", 500, 250, requests=3,
+                    cost_usd=None, source="usage_api"),
+    ])
+    await store.upsert_costs([CostRecord("openai", "2026-06-01", 1.50,
+                                         line_item="Completions", source="usage_api")])
+
+    data = await store.overview("2026-06-01", "2026-06-01")
+
+    assert data["totals"]["cost_usd"] == pytest.approx(1.50)
+    assert data["by_provider"][0]["cost_usd"] == pytest.approx(1.50)
+    assert data["daily"][0]["cost_usd"] == pytest.approx(1.50)
+
+
+async def test_overview_does_not_double_count_when_usage_and_cost_records_exist(store):
+    await store.upsert_usage([
+        UsageRecord("openai", "gpt-4o", "2026-06-01", 1000, 500, requests=2,
+                    cost_usd=2.00, source="usage_api"),
+    ])
+    await store.upsert_costs([CostRecord("openai", "2026-06-01", 1.50,
+                                         line_item="Completions", source="usage_api")])
+
+    data = await store.overview("2026-06-01", "2026-06-01")
+
+    assert data["totals"]["cost_usd"] == pytest.approx(1.50)
+    assert data["daily"][0]["cost_usd"] == pytest.approx(1.50)
+
+
+async def test_models_leaderboard_allocates_provider_day_costs_by_tokens(store):
+    await store.upsert_usage([
+        UsageRecord("openai", "gpt-4o", "2026-06-01", 1000, 500, requests=2,
+                    cost_usd=None, source="usage_api"),
+        UsageRecord("openai", "gpt-4o-mini", "2026-06-01", 500, 250, requests=3,
+                    cost_usd=None, source="usage_api"),
+    ])
+    await store.upsert_costs([CostRecord("openai", "2026-06-01", 1.50,
+                                         line_item="Completions", source="usage_api")])
+
+    models = await store.models_leaderboard("2026-06-01", "2026-06-01")
+
+    assert {m["model"]: m["cost_usd"] for m in models} == {
+        "gpt-4o": pytest.approx(1.00),
+        "gpt-4o-mini": pytest.approx(0.50),
+    }
+
+
+async def test_breakdown_allocates_provider_day_costs_by_tokens(store):
+    await store.upsert_usage([
+        UsageRecord("openai", "gpt-4o", "2026-06-01", 1000, 500, requests=2,
+                    cost_usd=None, source="usage_api"),
+        UsageRecord("openai", "gpt-4o-mini", "2026-06-01", 500, 250, requests=3,
+                    cost_usd=None, source="usage_api"),
+    ])
+    await store.upsert_costs([CostRecord("openai", "2026-06-01", 1.50,
+                                         line_item="Completions", source="usage_api")])
+
+    data = await store.breakdown("openai", "2026-06-01", "2026-06-01")
+
+    assert {m["model"]: m["cost_usd"] for m in data["by_model"]} == {
+        "gpt-4o": pytest.approx(1.00),
+        "gpt-4o-mini": pytest.approx(0.50),
+    }
+    assert data["daily"][0]["cost_usd"] == pytest.approx(1.50)
+
+
 @pytest.mark.asyncio
 async def test_reconciliation_summary_empty(store):
     result = await store.reconciliation_summary("gemini", "2026-06-01", "2026-06-30")

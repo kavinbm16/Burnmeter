@@ -109,7 +109,14 @@ async def health():
 
 def _period_range(period: str) -> tuple[str, str]:
     today = datetime.now(tz=timezone.utc).date()
-    if period == "mtd":
+    if period == "today":
+        return today.isoformat(), today.isoformat()
+    if period == "yesterday":
+        yesterday = today - timedelta(days=1)
+        return yesterday.isoformat(), yesterday.isoformat()
+    if period == "7d":
+        start = today - timedelta(days=7)
+    elif period == "mtd":
         start = today.replace(day=1)
     elif period == "90d":
         start = today - timedelta(days=90)

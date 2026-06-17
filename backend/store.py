@@ -341,6 +341,68 @@ class Store:
                 )
             await db.commit()
 
+    async def _cost_totals_by_provider(self, start: str, end: str) -> dict[str, float]:
+        """Total cost_records by provider for a date range.
+
+        These are provider-level actuals from usage/cost APIs or billing exports.
+        They do not include model attribution unless allocation is applied by the caller.
+        """
+        async with self._conn() as db:
+            cur = await db.execute(
+                """SELECT provider, SUM(cost_usd) AS cost_usd
+                   FROM cost_records WHERE date BETWEEN ? AND ?
+                   GROUP BY provider""",
+                (start, end),
+            )
+            return {r["provider"]: float(r["cost_usd"] or 0) for r in await cur.fetchall()}
+
+    async def _cost_totals_by_provider_date(
+        self, start: str, end: str
+    ) -> dict[tuple[str, str], float]:
+        """Total cost_records by provider/date for allocation and daily totals."""
+        async with self._conn() as db:
+            cur = await db.execute(
+                """SELECT provider, date, SUM(cost_usd) AS cost_usd
+                   FROM cost_records WHERE date BETWEEN ? AND ?
+                   GROUP BY provider, date""",
+                (start, end),
+            )
+            return {
+                (r["provider"], r["date"]): float(r["cost_usd"] or 0)
+                for r in await cur.fetchall()
+            }
+
+    @staticmethod
+    def _allocate_provider_day_costs(
+        rows: list[dict[str, Any]], costs: dict[tuple[str, str], float]
+    ) -> list[dict[str, Any]]:
+        """Allocate provider/day cost_records across usage rows for the same provider/day.
+
+        This keeps provider totals tied to actual cost records while still giving model
+        leaderboard/detail views a cost attribution. Allocation is token-share based and
+        should be surfaced as attribution, not perfect per-model billing.
+        """
+        by_provider_date: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        for row in rows:
+            by_provider_date.setdefault((row["provider"], row["date"]), []).append(row)
+
+        for (provider, date), group in by_provider_date.items():
+            total_cost = costs.get((provider, date))
+            if total_cost is None:
+                continue
+            total_tokens = sum(
+                int(row.get("input_tokens") or 0) + int(row.get("output_tokens") or 0)
+                for row in group
+            )
+            if total_tokens <= 0:
+                if len(group) == 1:
+                    group[0]["cost_usd"] = total_cost
+                continue
+            for row in group:
+                tokens = int(row.get("input_tokens") or 0) + int(row.get("output_tokens") or 0)
+                row["cost_usd"] = round(total_cost * (tokens / total_tokens), 6)
+        return rows
+
     # -- aggregates ------------------------------------------------------------
 
     async def overview(self, start: str, end: str) -> dict[str, Any]:
@@ -354,22 +416,73 @@ class Store:
                           SUM(audio_input_tokens) AS audio_input_tokens,
                           SUM(audio_output_tokens) AS audio_output_tokens,
                           SUM(requests) AS requests,
-                          SUM(cost_usd) AS cost_usd,
+                          SUM(cost_usd) AS usage_cost_usd,
                           MAX(cost_estimated) AS cost_estimated
                    FROM usage_records WHERE date BETWEEN ? AND ?
-                   GROUP BY provider ORDER BY cost_usd DESC""",
+                   GROUP BY provider""",
                 (start, end),
             )
-            by_provider = [dict(r) for r in await cur.fetchall()]
+            usage_by_provider = {r["provider"]: dict(r) for r in await cur.fetchall()}
 
             cur = await db.execute(
-                """SELECT date, provider, SUM(cost_usd) AS cost_usd,
-                          SUM(input_tokens + output_tokens) AS total_tokens
+                """SELECT date, provider, SUM(cost_usd) AS usage_cost_usd,
+                          SUM(input_tokens + output_tokens) AS total_tokens,
+                          SUM(requests) AS requests
                    FROM usage_records WHERE date BETWEEN ? AND ?
-                   GROUP BY date, provider ORDER BY date""",
+                   GROUP BY date, provider""",
                 (start, end),
             )
-            daily = [dict(r) for r in await cur.fetchall()]
+            daily_usage = {
+                (r["date"], r["provider"]): dict(r) for r in await cur.fetchall()
+            }
+
+        provider_costs = await self._cost_totals_by_provider(start, end)
+        provider_day_costs = await self._cost_totals_by_provider_date(start, end)
+
+        by_provider: list[dict[str, Any]] = []
+        for provider in set(usage_by_provider) | set(provider_costs):
+            usage = usage_by_provider.get(
+                provider,
+                {
+                    "provider": provider,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cache_read_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "audio_input_tokens": 0,
+                    "audio_output_tokens": 0,
+                    "requests": 0,
+                    "usage_cost_usd": 0,
+                    "cost_estimated": 0,
+                },
+            )
+            actual_cost = provider_costs.get(provider, 0.0)
+            usage_cost = usage.get("usage_cost_usd") or 0
+            usage["cost_usd"] = actual_cost if provider in provider_costs else usage_cost
+            by_provider.append(usage)
+        by_provider.sort(key=lambda p: p["cost_usd"] or 0, reverse=True)
+
+        daily_map: dict[tuple[str, str], dict[str, Any]] = dict(daily_usage)
+        for (provider, date), cost in provider_day_costs.items():
+            key = (date, provider)
+            if key in daily_map:
+                daily_map[key]["cost_usd"] = cost
+            else:
+                daily_map[key] = {
+                    "date": date,
+                    "provider": provider,
+                    "cost_usd": cost,
+                    "total_tokens": 0,
+                }
+        daily = [
+            {
+                "date": date,
+                "provider": provider,
+                "cost_usd": row.get("cost_usd"),
+                "total_tokens": row.get("total_tokens") or 0,
+            }
+            for (date, provider), row in sorted(daily_map.items())
+        ]
 
         totals = {
             "cost_usd": sum(p["cost_usd"] or 0 for p in by_provider),
@@ -389,12 +502,20 @@ class Store:
                    GROUP BY date ORDER BY date""",
                 (start, end),
             )
-            return [dict(r) for r in await cur.fetchall()]
+            days = {r["date"]: dict(r) for r in await cur.fetchall()}
+
+        for date, cost in (await self._cost_totals_by_provider_date(start, end)).items():
+            _, day = date
+            if day in days:
+                days[day]["cost_usd"] = cost
+            else:
+                days[day] = {"date": day, "cost_usd": cost, "total_tokens": 0, "requests": 0}
+        return [days[d] for d in sorted(days)]
 
     async def models_leaderboard(self, start: str, end: str) -> list[dict[str, Any]]:
         async with self._conn() as db:
             cur = await db.execute(
-                """SELECT model, provider,
+                """SELECT model, provider, date,
                           SUM(input_tokens) AS input_tokens,
                           SUM(output_tokens) AS output_tokens,
                           SUM(cache_read_tokens) AS cache_read_tokens,
@@ -404,10 +525,40 @@ class Store:
                           SUM(cost_usd) AS cost_usd,
                           MAX(cost_estimated) AS cost_estimated
                    FROM usage_records WHERE date BETWEEN ? AND ?
-                   GROUP BY model, provider ORDER BY cost_usd DESC""",
+                   GROUP BY model, provider, date""",
                 (start, end),
             )
-            return [dict(r) for r in await cur.fetchall()]
+            rows = [dict(r) for r in await cur.fetchall()]
+
+        rows = self._allocate_provider_day_costs(
+            rows, await self._cost_totals_by_provider_date(start, end)
+        )
+        by_model: dict[tuple[str, str], dict[str, Any]] = {}
+        for row in rows:
+            key = (row["provider"], row["model"])
+            if key not in by_model:
+                by_model[key] = {**row, "date": None}
+                by_model[key]["input_tokens"] = 0
+                by_model[key]["output_tokens"] = 0
+                by_model[key]["cache_read_tokens"] = 0
+                by_model[key]["audio_input_tokens"] = 0
+                by_model[key]["audio_output_tokens"] = 0
+                by_model[key]["requests"] = 0
+                by_model[key]["cost_usd"] = 0.0
+                by_model[key]["cost_estimated"] = row.get("cost_estimated") or 0
+            by_model[key]["input_tokens"] += row.get("input_tokens") or 0
+            by_model[key]["output_tokens"] += row.get("output_tokens") or 0
+            by_model[key]["cache_read_tokens"] += row.get("cache_read_tokens") or 0
+            by_model[key]["audio_input_tokens"] += row.get("audio_input_tokens") or 0
+            by_model[key]["audio_output_tokens"] += row.get("audio_output_tokens") or 0
+            by_model[key]["requests"] += row.get("requests") or 0
+            by_model[key]["cost_usd"] = (by_model[key]["cost_usd"] or 0) + (
+                row.get("cost_usd") or 0
+            )
+            by_model[key]["cost_estimated"] = max(
+                by_model[key]["cost_estimated"], row.get("cost_estimated") or 0
+            )
+        return sorted(by_model.values(), key=lambda r: r["cost_usd"] or 0, reverse=True)
 
     async def keys_breakdown(self, provider: str, start: str, end: str) -> list[dict[str, Any]]:
         """Per-API-key totals for proxy-captured traffic (key_id is the masked hint)."""
@@ -431,7 +582,7 @@ class Store:
     async def breakdown(self, provider: str, start: str, end: str) -> dict[str, Any]:
         async with self._conn() as db:
             cur = await db.execute(
-                """SELECT model, source,
+                """SELECT model, source, date,
                           SUM(input_tokens) AS input_tokens,
                           SUM(output_tokens) AS output_tokens,
                           SUM(cache_read_tokens) AS cache_read_tokens,
@@ -442,10 +593,13 @@ class Store:
                           SUM(cost_usd) AS cost_usd,
                           MAX(cost_estimated) AS cost_estimated
                    FROM usage_records WHERE provider=? AND date BETWEEN ? AND ?
-                   GROUP BY model, source ORDER BY cost_usd DESC""",
+                   GROUP BY model, source, date""",
                 (provider, start, end),
             )
-            by_model = [dict(r) for r in await cur.fetchall()]
+            by_model = self._allocate_provider_day_costs(
+                [dict(r) for r in await cur.fetchall()],
+                await self._cost_totals_by_provider_date(start, end),
+            )
 
             cur = await db.execute(
                 """SELECT date,
@@ -457,7 +611,7 @@ class Store:
                    GROUP BY date ORDER BY date""",
                 (provider, start, end),
             )
-            daily = [dict(r) for r in await cur.fetchall()]
+            daily_map = {r["date"]: dict(r) for r in await cur.fetchall()}
 
             cur = await db.execute(
                 """SELECT date, source, line_item, cost_usd FROM cost_records
@@ -466,4 +620,27 @@ class Store:
             )
             billed = [dict(r) for r in await cur.fetchall()]
 
-        return {"by_model": by_model, "daily": daily, "billed_costs": billed}
+        provider_day_costs = {
+            day: cost
+            for (cost_provider, day), cost in (
+                await self._cost_totals_by_provider_date(start, end)
+            ).items()
+            if cost_provider == provider
+        }
+        for date, cost in provider_day_costs.items():
+            if date in daily_map:
+                daily_map[date]["cost_usd"] = cost
+            else:
+                daily_map[date] = {
+                    "date": date,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cost_usd": cost,
+                    "requests": 0,
+                }
+
+        return {
+            "by_model": sorted(by_model, key=lambda r: r["cost_usd"] or 0, reverse=True),
+            "daily": [daily_map[d] for d in sorted(daily_map)],
+            "billed_costs": billed,
+        }

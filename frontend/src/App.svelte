@@ -12,7 +12,7 @@
   type Tab = 'dashboard' | 'budget' | 'optimize' | 'providers'
   let tab = $state<Tab>('dashboard')
   let detailProvider = $state<string | null>(null)
-  let period = $state('mtd')
+  let period = $state('today')
   let syncing = $state(false)
   let refreshTick = $state(0)
   let poster = $state<{ data: Overview; models: LeaderboardModel[] } | null>(null)
@@ -82,6 +82,9 @@
             bind:value={period}
             class="microlabel-dim cursor-pointer border border-hairline bg-ink px-2 py-1.5 focus:border-red focus:outline-none"
           >
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="7d">7D</option>
             <option value="mtd">This month</option>
             <option value="30d">30D</option>
             <option value="90d">90D</option>
