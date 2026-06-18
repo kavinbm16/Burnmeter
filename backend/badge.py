@@ -20,3 +20,8 @@ def render_badge_svg(amount_usd: float) -> str:
         f'<text x="{lw + vw / 2:.0f}" y="14" text-anchor="middle">{value}</text>'
         f'</g></svg>'
     )
+
+
+def write_badge(path: str, amount_usd: float) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(render_badge_svg(amount_usd))

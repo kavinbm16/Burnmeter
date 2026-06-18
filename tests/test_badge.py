@@ -18,3 +18,13 @@ def test_badge_contains_no_secret_inputs():
     svg = render_badge_svg(7.0)
     for needle in ("sk-", "AIza", "api", "key"):
         assert needle.lower() not in svg.lower()
+
+
+from backend import badge as badge_mod
+
+
+def test_badge_file_written(tmp_path):
+    path = tmp_path / "burn-badge.svg"
+    badge_mod.write_badge(str(path), 12.3)
+    assert path.read_text().startswith("<svg")
+    assert "$12.30" in path.read_text()

@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
-from backend.badge import render_badge_svg
+from backend.badge import render_badge_svg, write_badge
 from pydantic import BaseModel
 
 from backend.keys import KeyStore, install_redaction
@@ -201,12 +201,20 @@ async def remove_provider(name: str):
     return {"ok": True}
 
 
+async def _write_badge_file() -> None:
+    today = datetime.now(tz=timezone.utc).date()
+    month_start = today.replace(day=1).isoformat()
+    total = (await store.overview(month_start, today.isoformat()))["totals"]["cost_usd"] or 0.0
+    write_badge(os.environ.get("BURNMETER_BADGE_PATH", "burn-badge.svg"), total)
+
+
 @app.post("/api/sync")
 async def trigger_sync(provider: str | None = None):
     if provider:
         await sync_engine.sync_provider(provider)
     else:
         await sync_engine.sync_all()
+    await _write_badge_file()
     return {"ok": True}
 
 
