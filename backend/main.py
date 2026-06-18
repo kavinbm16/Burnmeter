@@ -257,6 +257,40 @@ async def heatmap(days: int = 120):
     }
 
 
+async def _compute_insight(store, cur_start, cur_end, prior_start, prior_end):
+    prior_total = (await store.overview(prior_start, prior_end))["totals"]["cost_usd"] or 0.0
+    if prior_total <= 0:
+        return None  # no baseline → no honest insight
+    cur_total = (await store.overview(cur_start, cur_end))["totals"]["cost_usd"] or 0.0
+
+    cur_models = {m["model"]: (m.get("cost_usd") or 0.0) for m in await store.models_leaderboard(cur_start, cur_end)}
+    prior_models = {m["model"]: (m.get("cost_usd") or 0.0) for m in await store.models_leaderboard(prior_start, prior_end)}
+    driver = None
+    if cur_models or prior_models:
+        best = max(
+            (cur_models.keys() | prior_models.keys()),
+            key=lambda k: abs(cur_models.get(k, 0.0) - prior_models.get(k, 0.0)),
+        )
+        driver = {"label": best, "delta_usd": cur_models.get(best, 0.0) - prior_models.get(best, 0.0)}
+
+    delta = cur_total - prior_total
+    return {
+        "current_usd": cur_total,
+        "prior_usd": prior_total,
+        "delta_usd": delta,
+        "delta_pct": delta / prior_total,
+        "direction": "up" if delta > 0.005 else "down" if delta < -0.005 else "flat",
+        "driver": driver,
+    }
+
+
+@app.get("/api/insights")
+async def insights(period: str = "7d"):
+    start, end = _period_range(period)
+    prior_start, prior_end = _prior_range(start, end)
+    return {"insight": await _compute_insight(store, start, end, prior_start, prior_end)}
+
+
 @app.get("/api/models")
 async def models(period: str = "30d", date: str | None = None):
     if date:
