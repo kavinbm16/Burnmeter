@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import uvicorn
@@ -124,6 +124,15 @@ def _period_range(period: str) -> tuple[str, str]:
     else:  # default 30d
         start = today - timedelta(days=30)
     return start.isoformat(), today.isoformat()
+
+
+def _prior_range(start: str, end: str) -> tuple[str, str]:
+    s = date.fromisoformat(start)
+    e = date.fromisoformat(end)
+    length = (e - s).days + 1  # inclusive day count
+    prior_end = s - timedelta(days=1)
+    prior_start = prior_end - timedelta(days=length - 1)
+    return prior_start.isoformat(), prior_end.isoformat()
 
 
 class AddProviderRequest(BaseModel):
