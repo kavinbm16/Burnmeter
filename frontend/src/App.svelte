@@ -115,7 +115,12 @@
         onback={() => (detailProvider = null)}
       />
     {:else}
-      <Dashboard {period} {refreshTick} ondrill={(p) => (detailProvider = p)} />
+      <Dashboard
+        {period}
+        {refreshTick}
+        ondrill={(p) => (detailProvider = p)}
+        onsetup={() => (tab = 'providers')}
+      />
     {/if}
   </main>
 

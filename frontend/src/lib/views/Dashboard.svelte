@@ -12,7 +12,13 @@
     period,
     refreshTick,
     ondrill,
-  }: { period: string; refreshTick: number; ondrill: (p: string) => void } = $props()
+    onsetup,
+  }: {
+    period: string
+    refreshTick: number
+    ondrill: (p: string) => void
+    onsetup: () => void
+  } = $props()
 
   let data = $state<Overview | null>(null)
   let budget = $state<Budget | null>(null)
@@ -87,6 +93,10 @@
         Add a provider key under PROVIDERS. OpenAI backfills 90 days of history;
         Gemini counts live through the local proxy.
       </p>
+      <button
+        class="focus-ring mt-6 bg-red px-6 py-2 text-xs font-bold tracking-widest text-ink"
+        onclick={onsetup}
+      >CONNECT YOUR FIRST PROVIDER →</button>
     </div>
   </div>
 {:else}

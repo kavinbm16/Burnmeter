@@ -6,12 +6,17 @@
   // `selected` is a provider name, 'vertex' (read-only), or 'billing'.
   let selected = $state<string>('')
   let proxyLang = $state<'python' | 'node' | 'curl'>('python')
+  // How the proxy gets its key: 'store' = saved in keychain & injected
+  // server-side; 'byok' = app passes its own key per request. Both count usage.
+  let keyMode = $state<'store' | 'byok'>('store')
 
   // ── Provider state ───────────────────────────────────────────────────
   let data = $state<ProvidersResponse | null>(null)
   let keyInput = $state<Record<string, string>>({})
   let busy = $state<string | null>(null)
   let errors = $state<Record<string, string>>({})
+  let syncBusy = $state(false)
+  let syncDone = $state(false)
 
   // ── GCP state ────────────────────────────────────────────────────────
   let gcp = $state<GCPStatus | null>(null)
@@ -159,6 +164,34 @@ client = genai.Client(
   function select(name: string) {
     selected = name
     errors = { ...errors, [name]: '' }
+  }
+
+  // Sync only the selected provider (the SYNC NOW button used to sync all).
+  async function syncProvider() {
+    syncBusy = true
+    errors = { ...errors, [selected]: '' }
+    try {
+      const res = await api.sync(selected)
+      if (!res.ok) throw new Error('sync failed')
+      await load()
+      syncDone = true
+      setTimeout(() => (syncDone = false), 1800)
+    } catch (e: any) {
+      errors = { ...errors, [selected]: e.message }
+    } finally {
+      syncBusy = false
+    }
+  }
+
+  // "2026-06-18T09:58" (UTC, no zone) → "3m ago".
+  function relTime(iso: string): string {
+    const t = Date.parse(iso.endsWith('Z') ? iso : iso + 'Z')
+    if (isNaN(t)) return iso
+    const s = Math.max(0, (Date.now() - t) / 1000)
+    if (s < 60) return 'just now'
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`
+    return `${Math.floor(s / 86400)}d ago`
   }
 </script>
 
@@ -444,7 +477,7 @@ client = genai.Client(
               {#if cfg.sync_status === 'invalid_key' || cfg.sync_status === 'error'}
                 <span class="ml-auto text-xs" style="color: var(--red)">▲ key error</span>
               {:else if cfg.last_synced_at}
-                <span class="microlabel-dim ml-auto">synced {cfg.last_synced_at}Z</span>
+                <span class="microlabel-dim ml-auto">synced {relTime(cfg.last_synced_at)}</span>
               {/if}
             {/if}
           </div>
@@ -457,10 +490,14 @@ client = genai.Client(
                   <span style="color: var(--red); font-size: 0.6rem;">●</span>
                   <code class="numeral text-xs">{cfg.masked_key}</code>
                   {#if cfg.last_synced_at}
-                    <span class="microlabel-dim">· last sync {cfg.last_synced_at}Z</span>
+                    <span class="microlabel-dim">· synced {relTime(cfg.last_synced_at)}</span>
                   {/if}
                   <div class="ml-auto flex gap-3">
-                    <button class="focus-ring microlabel border border-hairline px-3 py-1 hover:border-red" onclick={() => api.sync()}>SYNC NOW</button>
+                    <button
+                      class="focus-ring microlabel border border-hairline px-3 py-1 hover:border-red disabled:opacity-40"
+                      disabled={syncBusy}
+                      onclick={syncProvider}
+                    >{syncBusy ? 'SYNCING…' : syncDone ? 'SYNCED ✓' : 'SYNC NOW'}</button>
                     <button class="focus-ring microlabel-dim hover:text-paper" onclick={() => remove(selected)}>REMOVE</button>
                   </div>
                 </div>
@@ -469,26 +506,63 @@ client = genai.Client(
               <!-- Step 1 -->
               <div class="flex items-center gap-2">
                 <span class="microlabel shrink-0" style="background: var(--red); color: var(--ink); padding: 1px 6px;">1</span>
-                <span class="text-sm font-semibold uppercase tracking-widest">ADD KEY (OPTIONAL)</span>
+                <span class="text-sm font-semibold uppercase tracking-widest">HOW THE PROXY GETS YOUR KEY</span>
               </div>
               {#if !cfg}
-                <div class="mt-2 flex gap-px">
-                  <input
-                    type="password"
-                    placeholder="AIza…"
-                    bind:value={keyInput[selected]}
-                    class="numeral flex-1 border border-hairline bg-ink px-3 py-2.5 text-base text-paper placeholder:text-muted/70 focus:border-red focus:outline-none"
-                    onkeydown={(e) => e.key === 'Enter' && add(selected)}
-                  />
+                <!-- Two ways to give the proxy a key — both count usage identically. -->
+                <div class="mt-2 grid gap-px sm:grid-cols-2">
                   <button
-                    class="focus-ring bg-red px-5 text-xs font-bold tracking-widest text-ink disabled:opacity-40"
-                    disabled={busy === selected || !(keyInput[selected] ?? '').trim()}
-                    onclick={() => add(selected)}
-                  >{busy === selected ? '…' : 'ADD KEY'}</button>
+                    class="focus-ring border p-3 text-left transition-colors"
+                    style={keyMode === 'store'
+                      ? 'border-color: var(--red); background: var(--ink-2);'
+                      : 'border-color: var(--hairline);'}
+                    onclick={() => (keyMode = 'store')}
+                  >
+                    <div class="text-sm font-semibold uppercase tracking-wide" style="color: var(--paper)">
+                      Store key here <span class="microlabel-dim">· recommended</span>
+                    </div>
+                    <p class="mt-1 text-xs" style="color: var(--muted)">
+                      Saved to your OS keychain. The proxy injects it server-side — your app code carries no key.
+                    </p>
+                  </button>
+                  <button
+                    class="focus-ring border p-3 text-left transition-colors"
+                    style={keyMode === 'byok'
+                      ? 'border-color: var(--red); background: var(--ink-2);'
+                      : 'border-color: var(--hairline);'}
+                    onclick={() => (keyMode = 'byok')}
+                  >
+                    <div class="text-sm font-semibold uppercase tracking-wide" style="color: var(--paper)">
+                      Pass key in code
+                    </div>
+                    <p class="mt-1 text-xs" style="color: var(--muted)">
+                      Nothing stored here. Your app sends its own key per request; the proxy forwards it untouched.
+                    </p>
+                  </button>
                 </div>
-                <p class="microlabel-dim mt-1">or skip — pass your own key per request</p>
-                {#if errors[selected]}
-                  <p class="mt-2 text-sm" style="color: var(--red)">▲ {errors[selected]}</p>
+
+                {#if keyMode === 'store'}
+                  <div class="mt-3 flex gap-px">
+                    <input
+                      type="password"
+                      placeholder="AIza…"
+                      bind:value={keyInput[selected]}
+                      class="numeral flex-1 border border-hairline bg-ink px-3 py-2.5 text-base text-paper placeholder:text-muted/70 focus:border-red focus:outline-none"
+                      onkeydown={(e) => e.key === 'Enter' && add(selected)}
+                    />
+                    <button
+                      class="focus-ring bg-red px-5 text-xs font-bold tracking-widest text-ink disabled:opacity-40"
+                      disabled={busy === selected || !(keyInput[selected] ?? '').trim()}
+                      onclick={() => add(selected)}
+                    >{busy === selected ? '…' : 'STORE KEY'}</button>
+                  </div>
+                  {#if errors[selected]}
+                    <p class="mt-2 text-sm" style="color: var(--red)">▲ {errors[selected]}</p>
+                  {/if}
+                {:else}
+                  <p class="microlabel-dim mt-3">
+                    Nothing to set up here — use the snippet below with your own key. Usage still counts automatically.
+                  </p>
                 {/if}
               {/if}
 
@@ -532,10 +606,14 @@ client = genai.Client(
                   <span style="color: var(--red); font-size: 0.6rem;">●</span>
                   <code class="numeral text-xs">{cfg.masked_key}</code>
                   {#if cfg.last_synced_at}
-                    <span class="microlabel-dim">· last sync {cfg.last_synced_at}Z</span>
+                    <span class="microlabel-dim">· synced {relTime(cfg.last_synced_at)}</span>
                   {/if}
                   <div class="ml-auto flex gap-3">
-                    <button class="focus-ring microlabel border border-hairline px-3 py-1 hover:border-red" onclick={() => api.sync()}>SYNC NOW</button>
+                    <button
+                      class="focus-ring microlabel border border-hairline px-3 py-1 hover:border-red disabled:opacity-40"
+                      disabled={syncBusy}
+                      onclick={syncProvider}
+                    >{syncBusy ? 'SYNCING…' : syncDone ? 'SYNCED ✓' : 'SYNC NOW'}</button>
                     <button class="focus-ring microlabel-dim hover:text-paper" onclick={() => remove(selected)}>REMOVE</button>
                   </div>
                 </div>
