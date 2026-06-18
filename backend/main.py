@@ -11,7 +11,10 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+
+from backend.badge import render_badge_svg
 from pydantic import BaseModel
 
 from backend.keys import KeyStore, install_redaction
@@ -289,6 +292,14 @@ async def insights(period: str = "7d"):
     start, end = _period_range(period)
     prior_start, prior_end = _prior_range(start, end)
     return {"insight": await _compute_insight(store, start, end, prior_start, prior_end)}
+
+
+@app.get("/api/badge.svg")
+async def badge_svg():
+    today = datetime.now(tz=timezone.utc).date()
+    month_start = today.replace(day=1).isoformat()
+    total = (await store.overview(month_start, today.isoformat()))["totals"]["cost_usd"] or 0.0
+    return Response(content=render_badge_svg(total), media_type="image/svg+xml")
 
 
 @app.get("/api/models")
